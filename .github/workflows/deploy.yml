@@ -1,0 +1,86 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or SHA to deploy
+        required: true
+        default: main
+        type: string
+  pull_request:
+    types: [labeled]
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+  packages: write
+  checks: write
+
+jobs:
+  select:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'deployDev'
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.target.outputs.ref }}
+      branch: ${{ steps.target.outputs.branch }}
+    steps:
+      - id: target
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+            echo "branch=${{ github.head_ref }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "ref=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"
+            echo "branch=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            echo "branch=main" >> "$GITHUB_OUTPUT"
+          fi
+
+  tests:
+    needs: select
+    uses: ./.github/workflows/tests.yml
+    with:
+      skip_label_gate: true
+      ref: ${{ needs.select.outputs.ref }}
+    secrets: inherit
+
+  build:
+    needs: [select, tests]
+    uses: ./.github/workflows/build.yml
+    with:
+      skip_label_gate: true
+      ref: ${{ needs.select.outputs.ref }}
+    secrets: inherit
+
+  deploy:
+    needs: [select, tests, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.select.outputs.ref }}
+      - name: Validate Helm chart
+        uses: azure/setup-helm@v4
+      - name: Lint chart
+        run: helm lint deployment/helm/bluecrest
+      - name: Deploy to fictional Kubernetes cluster (placeholder)
+        env:
+          DEPLOY_REF: ${{ needs.select.outputs.ref }}
+          DEPLOY_BRANCH: ${{ needs.select.outputs.branch }}
+        run: |
+          echo "Chart lint passed. Deployment target is fictional; no cluster credentials are configured."
+          # Real cluster deployment, once available:
+          # helm upgrade --install bluecrest deployment/helm/bluecrest \
+          #   --namespace bluecrest --create-namespace \
+          #   --set image.repository=ghcr.io/${GITHUB_REPOSITORY}/prod \
+          #   --set image.tag=<version> \
+          #   --set data.configMapName=bluecrest-data
+          # Create/update the CSV ConfigMap when the user uploads data:
+          # kubectl create configmap bluecrest-data --from-file=data.csv=src/data.csv \
+          #   --namespace bluecrest --dry-run=client -o yaml | kubectl apply -f -
+          echo "Deployment steps documented; fictional-cluster deployment skipped for ref ${DEPLOY_REF} (${DEPLOY_BRANCH})."
