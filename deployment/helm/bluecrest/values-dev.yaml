@@ -10,6 +10,16 @@ fullnameOverride: bluecrest
 service:
   type: ClusterIP
   port: 8501
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: bluecrest.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
 resources:
   requests:
     cpu: 50m
