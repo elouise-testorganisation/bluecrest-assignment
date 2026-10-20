@@ -7,7 +7,6 @@ imagePullSecrets:
   - name: ghcr-pull-secret
 nameOverride: ""
 fullnameOverride: bluecrest
-namespace: default
 service:
   type: ClusterIP
   port: 8501
