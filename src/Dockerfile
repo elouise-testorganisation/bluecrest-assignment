@@ -10,7 +10,9 @@ FROM python:3.12-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \\\n    HOME=/tmp \\\n    STREAMLIT_CONFIG_DIR=/tmp/.streamlit
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
+    HOME=/tmp \
+    STREAMLIT_CONFIG_DIR=/tmp/.streamlit
 
 RUN groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --home-dir /nonexistent \
