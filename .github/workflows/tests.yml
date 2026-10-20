@@ -54,6 +54,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.target.outputs.ref }}
+      - name: Resolve tested commit SHA
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -69,31 +72,22 @@ jobs:
           PYTHONPATH: app
         run: python -m unittest discover -s test -v
       - name: Publish testsPassed check on tested commit
-        if: always() && steps.target.outputs.ref != ''
+        if: always() && steps.target.outputs.branch != 'main' && steps.commit.outputs.sha != ''
         uses: actions/github-script@v7
         env:
           TEST_RESULT: ${{ steps.suite.outcome }}
-          TESTED_REF: ${{ steps.target.outputs.ref }}
-          TESTED_BRANCH: ${{ steps.target.outputs.branch }}
+          TESTED_SHA: ${{ steps.commit.outputs.sha }}
         with:
           script: |
-            const isPR = context.eventName === 'pull_request';
-            const branch = process.env.TESTED_BRANCH;
-            const sha = isPR ? context.payload.pull_request.head.sha : process.env.TESTED_REF;
-            const mainRef = branch === 'main' || branch === 'refs/heads/main';
-            if (isPR && !mainRef) {
-              await github.rest.checks.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name: 'testsPassed',
-                head_sha: sha,
-                status: 'completed',
-                conclusion: process.env.TEST_RESULT === 'success' ? 'success' : 'failure',
-                output: { title: 'Test suite', summary: process.env.TEST_RESULT === 'success' ? 'All tests passed.' : 'The test suite failed. See this workflow run for details.' }
-              });
-            } else {
-              core.info('Main/manual test run: no testsPassed check run is posted.');
-            }
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'testsPassed',
+              head_sha: process.env.TESTED_SHA,
+              status: 'completed',
+              conclusion: process.env.TEST_RESULT === 'success' ? 'success' : 'failure',
+              output: { title: 'Test suite', summary: process.env.TEST_RESULT === 'success' ? 'All tests passed.' : 'The test suite failed. See this workflow run for details.' }
+            });
       - name: Fail workflow when tests fail
         if: steps.suite.outcome != 'success'
         run: exit 1
