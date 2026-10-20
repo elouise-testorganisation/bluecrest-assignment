@@ -1,11 +1,12 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/elouise-matthews/bluecrest-assignment/prod
-  tag: "0.1.0"
-  pullPolicy: IfNotPresent
+  repository: ghcr.io/elouise-matthews/bluecrest-assignment/dev
+  tag: "dev-latest"
+  pullPolicy: Always
 
-imagePullSecrets: []
+imagePullSecrets:
+  - name: ghcr-pull-secret
 nameOverride: ""
 fullnameOverride: ""
 
@@ -22,8 +23,6 @@ resources:
     memory: 512Mi
 
 data:
-  # Supply a CSV on the cluster as a ConfigMap named bluecrest-data, key data.csv.
-  # The chart mounts it read-only at /app/data.csv.
   configMapName: bluecrest-data
   fileName: data.csv
 
