@@ -1,0 +1,145 @@
+name: Development deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Feature branch to deploy
+        required: true
+        type: string
+  pull_request:
+    types: [labeled]
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+  packages: write
+  checks: write
+
+jobs:
+  select:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'deployDev'
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.target.outputs.ref }}
+      branch: ${{ steps.target.outputs.branch }}
+    steps:
+      - id: target
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+            echo "branch=${{ github.head_ref }}" >> "$GITHUB_OUTPUT"
+          else
+            BRANCH="${{ inputs.branch }}"
+            if [[ "$BRANCH" == "main" ]]; then echo "Dev deploy requires a feature branch." >&2; exit 1; fi
+            echo "ref=$BRANCH" >> "$GITHUB_OUTPUT"
+            echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          fi
+
+  tests:
+    needs: select
+    uses: ./.github/workflows/tests.yml
+    with:
+      skip_label_gate: true
+      ref: ${{ needs.select.outputs.ref }}
+      branch: ${{ needs.select.outputs.branch }}
+    secrets: inherit
+
+  build:
+    needs: [select, tests]
+    uses: ./.github/workflows/build.yml
+    with:
+      skip_label_gate: true
+      ref: ${{ needs.select.outputs.ref }}
+      branch: ${{ needs.select.outputs.branch }}
+    secrets: inherit
+
+  deploy:
+    needs: [select, tests, build]
+    runs-on: [self-hosted, linux, minikube]
+    outputs:
+      namespace: ${{ steps.namespace.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.select.outputs.ref }}
+      - uses: azure/setup-helm@v4
+      - uses: azure/setup-kubectl@v4
+      - name: Create unique transient namespace
+        id: namespace
+        shell: bash
+        env:
+          BRANCH: ${{ needs.select.outputs.branch }}
+        run: |
+          NS="bluecrest-dev-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "name=$NS" >> "$GITHUB_OUTPUT"
+          kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label namespace "$NS" app.kubernetes.io/part-of=bluecrest bluecrest.openai.com/environment=development --overwrite
+      - name: Configure GHCR pull secret in transient namespace
+        env:
+          NS: ${{ steps.namespace.outputs.name }}
+          GHCR_PULL_USERNAME: ${{ secrets.GHCR_PULL_USERNAME }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+        shell: bash
+        run: |
+          test -n "$GHCR_PULL_USERNAME" && test -n "$GHCR_PULL_TOKEN" || { echo "Set GHCR_PULL_USERNAME and GHCR_PULL_TOKEN repository secrets." >&2; exit 1; }
+          kubectl create secret docker-registry ghcr-pull-secret \
+            --docker-server=ghcr.io \
+            --docker-username="$GHCR_PULL_USERNAME" \
+            --docker-password="$GHCR_PULL_TOKEN" \
+            --namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+      - name: Apply development data ConfigMap
+        env:
+          NS: ${{ steps.namespace.outputs.name }}
+        run: |
+          kubectl create configmap bluecrest-data \
+            --from-file=data.csv=src/data/data.csv \
+            --namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+      - name: Deploy development Helm release
+        env:
+          DEPLOY_REF: ${{ needs.select.outputs.ref }}
+          DEPLOY_BRANCH: ${{ needs.select.outputs.branch }}
+          NS: ${{ steps.namespace.outputs.name }}
+        shell: bash
+        run: |
+          SHORT_SHA="$(git rev-parse --short "$DEPLOY_REF")"
+          SAFE_BRANCH="$(echo "$DEPLOY_BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g' | sed -E 's/^-+|-+$//g')"
+          IMAGE_TAG="${SAFE_BRANCH}-${SHORT_SHA}"
+          echo "Deploying dev image tag $IMAGE_TAG into transient namespace $NS"
+          helm upgrade --install bluecrest deployment/helm/bluecrest \
+            --namespace "$NS" \
+            --values deployment/helm/bluecrest/values-dev.yaml \
+            --set image.tag="$IMAGE_TAG" \
+            --wait --timeout 180s
+      - name: Verify rollout and HTTP health endpoint
+        env:
+          NS: ${{ steps.namespace.outputs.name }}
+        run: |
+          kubectl rollout status deployment/bluecrest --namespace "$NS" --timeout=180s
+          (kubectl port-forward service/bluecrest 18502:8501 --namespace "$NS" >/tmp/bluecrest-dev-port-forward.log 2>&1 & echo $! >/tmp/bluecrest-dev-port-forward.pid)
+          trap 'kill "$(cat /tmp/bluecrest-dev-port-forward.pid)" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 20); do
+            if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18502/_stcore/health', timeout=2)" 2>/dev/null; then
+              echo "Development health check passed."
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/bluecrest-dev-port-forward.log
+          echo "Development health check failed." >&2
+          exit 1
+
+  cleanup:
+    needs: [select, deploy]
+    if: success()
+    runs-on: [self-hosted, linux, minikube]
+    steps:
+      - name: Delete transient development namespace
+        env:
+          NS: ${{ needs.deploy.outputs.namespace }}
+        run: |
+          echo "Waiting 10 seconds before deleting $NS (temporary retention; change to 600 seconds for the requested 10-minute retention)."
+          sleep 10
+          kubectl delete namespace "$NS" --wait=false
+          echo "Transient development namespace $NS deletion requested."
