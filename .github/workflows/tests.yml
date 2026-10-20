@@ -26,7 +26,6 @@ on:
         default: main
   pull_request:
     types: [labeled, synchronize, reopened]
-    branches-ignore: [main]
 
 permissions:
   contents: read
