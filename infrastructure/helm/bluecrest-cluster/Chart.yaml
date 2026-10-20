@@ -1,0 +1,6 @@
+apiVersion: v2
+name: bluecrest-cluster
+description: Static cluster prerequisites for Bluecrest application deployments
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

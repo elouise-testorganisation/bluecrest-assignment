@@ -1,0 +1,36 @@
+replicaCount: 1
+image:
+  repository: ghcr.io/elouise-matthews/bluecrest-assignment/dev
+  tag: "dev-latest"
+  pullPolicy: Always
+imagePullSecrets:
+  - name: ghcr-pull-secret
+nameOverride: ""
+fullnameOverride: bluecrest
+service:
+  type: ClusterIP
+  port: 8501
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: bluecrest.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: 300m
+    memory: 384Mi
+data:
+  configMapName: bluecrest-data
+  fileName: data.csv
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

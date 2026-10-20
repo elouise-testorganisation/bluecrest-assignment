@@ -1,0 +1,6 @@
+productionNamespace: bluecrest-prod
+productionResourceQuota:
+  requestsCpu: "2"
+  requestsMemory: 2Gi
+  limitsCpu: "4"
+  limitsMemory: 4Gi

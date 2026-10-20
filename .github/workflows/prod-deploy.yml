@@ -1,0 +1,106 @@
+name: Production deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to deploy (production deployments must use main)
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  checks: write
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.target.outputs.ref }}
+      branch: ${{ steps.target.outputs.branch }}
+    steps:
+      - id: target
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            BRANCH="${{ inputs.branch }}"
+            if [[ "$BRANCH" != "main" ]]; then echo "Production deployment is only allowed from main." >&2; exit 1; fi
+            echo "ref=$BRANCH" >> "$GITHUB_OUTPUT"
+            echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            echo "branch=main" >> "$GITHUB_OUTPUT"
+          fi
+
+  tests:
+    needs: select
+    uses: ./.github/workflows/tests.yml
+    with:
+      skip_label_gate: true
+      ref: ${{ needs.select.outputs.ref }}
+      branch: ${{ needs.select.outputs.branch }}
+    secrets: inherit
+
+  build:
+    needs: [select, tests]
+    uses: ./.github/workflows/build.yml
+    with:
+      skip_label_gate: true
+      ref: ${{ needs.select.outputs.ref }}
+      branch: ${{ needs.select.outputs.branch }}
+    secrets: inherit
+
+  deploy:
+    needs: [select, tests, build]
+    runs-on: [self-hosted, linux, minikube]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.select.outputs.ref }}
+      - uses: azure/setup-helm@v4
+      - uses: azure/setup-kubectl@v4
+      - name: Verify Minikube access and prerequisites
+        run: |
+          kubectl config current-context
+          kubectl get namespace bluecrest-prod
+          kubectl get secret ghcr-pull-secret --namespace bluecrest-prod
+      - name: Apply production data ConfigMap
+        run: |
+          kubectl create configmap bluecrest-data \
+            --from-file=data.csv=src/data/data.csv \
+            --namespace bluecrest-prod --dry-run=client -o yaml | kubectl apply -f -
+      - name: Deploy production Helm release
+        id: helm
+        env:
+          DEPLOY_REF: ${{ needs.select.outputs.ref }}
+        run: |
+          VERSION="$(git describe --tags --exact-match "$DEPLOY_REF" 2>/dev/null || true)"
+          VERSION="${VERSION#v}"
+          if [[ -z "$VERSION" ]]; then
+            VERSION="$(grep -E '^version\s*=' src/app/pyproject.toml | head -1 | cut -d '"' -f2)"
+          fi
+          echo "Deploying prod image version $VERSION"
+          helm upgrade --install bluecrest deployment/helm/bluecrest \
+            --namespace bluecrest-prod \
+            --values deployment/helm/bluecrest/values-prod.yaml \
+            --set image.tag="$VERSION" \
+            --wait --timeout 180s
+      - name: Verify rollout and HTTP health endpoint
+        run: |
+          kubectl rollout status deployment/bluecrest --namespace bluecrest-prod --timeout=180s
+          (kubectl port-forward service/bluecrest 18501:8501 --namespace bluecrest-prod >/tmp/bluecrest-port-forward.log 2>&1 & echo $! >/tmp/bluecrest-port-forward.pid)
+          trap 'kill "$(cat /tmp/bluecrest-port-forward.pid)" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 20); do
+            if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18501/_stcore/health', timeout=2)" 2>/dev/null; then
+              echo "Production health check passed."
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/bluecrest-port-forward.log
+          echo "Production health check failed." >&2
+          exit 1

@@ -1,0 +1,38 @@
+name: Bootstrap Minikube infrastructure
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: [self-hosted, linux, minikube]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: azure/setup-helm@v4
+      - uses: azure/setup-kubectl@v4
+      - name: Verify cluster access
+        run: |
+          kubectl config current-context
+          kubectl cluster-info
+      - name: Apply static cluster resources
+        run: |
+          helm upgrade --install bluecrest-cluster infrastructure/helm/bluecrest-cluster \
+            --namespace default --wait --timeout 120s
+      - name: Configure production GHCR pull secret
+        env:
+          GHCR_PULL_USERNAME: ${{ secrets.GHCR_PULL_USERNAME }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+        shell: bash
+        run: |
+          test -n "$GHCR_PULL_USERNAME" && test -n "$GHCR_PULL_TOKEN" || { echo "Set GHCR_PULL_USERNAME and GHCR_PULL_TOKEN repository secrets." >&2; exit 1; }
+          kubectl create secret docker-registry ghcr-pull-secret \
+            --docker-server=ghcr.io \
+            --docker-username="$GHCR_PULL_USERNAME" \
+            --docker-password="$GHCR_PULL_TOKEN" \
+            --namespace bluecrest-prod --dry-run=client -o yaml | kubectl apply -f -
+          echo "Static cluster resources and production GHCR pull secret are ready."
