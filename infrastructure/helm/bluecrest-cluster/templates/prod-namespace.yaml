@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.productionNamespace }}
+  labels:
+    app.kubernetes.io/part-of: bluecrest
+    bluecrest.openai.com/environment: production
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: bluecrest-default-quota
+  namespace: {{ .Values.productionNamespace }}
+spec:
+  hard:
+    requests.cpu: {{ .Values.productionResourceQuota.requestsCpu | quote }}
+    requests.memory: {{ .Values.productionResourceQuota.requestsMemory | quote }}
+    limits.cpu: {{ .Values.productionResourceQuota.limitsCpu | quote }}
+    limits.memory: {{ .Values.productionResourceQuota.limitsMemory | quote }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bluecrest-default-deny-ingress
+  namespace: {{ .Values.productionNamespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
