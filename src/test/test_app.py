@@ -64,9 +64,17 @@ class ApplicationBehaviorTests(unittest.TestCase):
                 app = AppTest.from_file(str(app_path)).run()
 
             self.assertEqual(len(app.exception), 0)
-            chart_elements = (app.get("line_chart") or app.get("vega_lite_chart") or app.get("arrow_vega_lite_chart"))
+            chart_elements = (
+                app.get("line_chart")
+                or app.get("vega_lite_chart")
+                or app.get("arrow_vega_lite_chart")
+            )
             self.assertGreaterEqual(len(chart_elements), 1)
-            self.assertGreaterEqual(len(app.get("dataframe")), 1)
+
+            # Streamlit 1.50 exposes st.dataframe as "arrow_data_frame".
+            # Keep the older "dataframe" key as a fallback for compatibility.
+            dataframe_elements = app.get("arrow_data_frame") or app.get("dataframe")
+            self.assertGreaterEqual(len(dataframe_elements), 1)
 
 
 if __name__ == "__main__":
