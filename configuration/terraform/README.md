@@ -4,6 +4,7 @@ This Terraform configuration manages the existing `elouise-matthews/bluecrest-as
 
 ## Intended access model
 
+- The repository is configured as **public** so reviewers can view it without being invited. Public means anyone on the internet can view and clone the repository; it is not private link-only access. Check for credentials, tokens, personal data, and other material that must not be published before changing visibility.
 - The repository is owned by the personal account `elouise-matthews`, which is its administrator. GitHub teams/admin groups are not available for personal repositories.
 - Other collaborators should have `pull` (read-only) permission. Add every non-owner collaborator to `read_only_collaborators` in `terraform.tfvars`. Contributors can still propose changes through pull requests, including from forks.
 - `main` requires pull requests and a code-owner approval. The root `.github/CODEOWNERS` file names `@elouise-matthews` as the code owner.
@@ -31,7 +32,7 @@ cp terraform.tfvars.example terraform.tfvars
 terraform plan
 ```
 
-Review the plan carefully before running `terraform apply`. The initial plan should be reviewed for any unrelated settings Terraform proposes to change. Keep `terraform.tfstate`, `.terraform/`, and any real `terraform.tfvars` file out of version control.
+Review the plan carefully before running `terraform apply`. Changing `visibility` to `public` makes the entire repository publicly accessible. Confirm that no secrets or private data are present before applying. The initial plan should be reviewed for any unrelated settings Terraform proposes to change. Keep `terraform.tfstate`, `.terraform/`, and any real `terraform.tfvars` file out of version control.
 
 ## Scope and limitations
 
