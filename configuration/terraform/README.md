@@ -4,14 +4,16 @@ This Terraform configuration manages the existing `elouise-matthews/bluecrest-as
 
 ## Intended access model
 
-- The repository is configured as **public** so reviewers can view it without being invited. Public means anyone on the internet can view and clone the repository; it is not private link-only access. Check for credentials, tokens, personal data, and other material that must not be published before changing visibility.
+- The desired release state is **public** so reviewers can view the code without being invited. Public means anyone on the internet can view and clone the repository; it is not private link-only access.
+- The Terraform configuration declares `visibility = "public"`. **Do not run `terraform apply` until you are ready to make the repository public.** Terraform will plan a visibility change if the live repository is still private.
+- Before publishing, inspect the complete repository history, branches, tags, Actions logs/artifacts, and files for credentials, tokens, personal data, and anything else that must not be public. Removing a secret from the latest version does not remove it from Git history; rotate any secret that was ever committed.
 - The repository is owned by the personal account `elouise-matthews`, which is its administrator. GitHub teams/admin groups are not available for personal repositories.
-- Other collaborators should have `pull` (read-only) permission. Add every non-owner collaborator to `read_only_collaborators` in `terraform.tfvars`. Contributors can still propose changes through pull requests, including from forks.
-- `main` requires pull requests and a code-owner approval. The root `.github/CODEOWNERS` file names `@elouise-matthews` as the code owner.
-- Stale approvals are dismissed when new commits are pushed. Only the owner can dismiss reviews.
-- Administrators are not subject to the branch protection rules, so the owner retains an administrative recovery/bypass path.
+- Anonymous visitors receive public read access, not write access. Reviewers can submit changes via pull requests from forks without being added as collaborators.
+- The `main` branch requires pull requests and a code-owner approval. The root `.github/CODEOWNERS` file names `@elouise-matthews` as the code owner for every file.
+- Stale approvals are dismissed when new commits are pushed; review conversations must be resolved before merge. Only the owner can dismiss reviews.
+- Administrators can bypass branch protection because `enforce_admins = false`, preserving an owner recovery path.
 
-GitHub allows other users to submit an “Approve” review, but a non-owner approval alone cannot satisfy the required code-owner review.
+GitHub allows other users to submit an “Approve” review, but a non-owner approval alone cannot satisfy the required code-owner review. Code-owner review enforcement requires GitHub to recognize the owner as a code owner with write access.
 
 ## Prerequisites
 
@@ -28,14 +30,14 @@ terraform init
 terraform import github_repository.this elouise-matthews/bluecrest-assignment
 terraform import github_branch_protection.main bluecrest-assignment:main
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars and list every non-owner collaborator.
+# Add only known collaborators who should have read-only access.
 terraform plan
 ```
 
-Review the plan carefully before running `terraform apply`. Changing `visibility` to `public` makes the entire repository publicly accessible. Confirm that no secrets or private data are present before applying. The initial plan should be reviewed for any unrelated settings Terraform proposes to change. Keep `terraform.tfstate`, `.terraform/`, and any real `terraform.tfvars` file out of version control.
+Review the plan carefully before running `terraform apply`. If the live repository is still private, the plan will make it public. Confirm that you are ready to publish before applying. Review any unrelated settings Terraform proposes to change. Keep `terraform.tfstate`, `.terraform/`, plan files, and any real `terraform.tfvars` out of version control. The local state file may contain sensitive repository metadata; store it securely and back it up safely.
 
 ## Scope and limitations
 
-The collaborator resource sets the permission of each username listed in `read_only_collaborators` to read-only; it does not automatically discover or remove unlisted collaborators. Inventory current collaborators and list all of them before applying if you want to enforce the read-only policy consistently.
+The collaborator resource sets the permission of each username listed in `read_only_collaborators` to read-only; it does not automatically discover or remove unlisted collaborators. Public reviewers do not need to be listed as collaborators. Inventory existing collaborators and list them if you want Terraform to manage their access explicitly.
 
 Because this is a personal repository, Terraform cannot create a separate one-person GitHub admin team. If you later move the repository into an organization, an organization team can be created and managed separately.
