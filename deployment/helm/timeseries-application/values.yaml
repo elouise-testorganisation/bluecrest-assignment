@@ -1,12 +1,12 @@
-replicaCount: 2
+replicaCount: 1
 image:
-  repository: ghcr.io/elouise-matthews/bluecrest-assignment/prod
-  tag: "0.1.0"
-  pullPolicy: IfNotPresent
+  repository: ghcr.io/elouise-matthews/bluecrest-assignment/dev
+  tag: "dev-latest"
+  pullPolicy: Always
 imagePullSecrets:
   - name: ghcr-pull-secret
-nameOverride: ""
-fullnameOverride: bluecrest
+nameOverride: bluecrest
+fullnameOverride: ""
 service:
   type: ClusterIP
   port: 8501
@@ -20,6 +20,9 @@ ingress:
         - path: /
           pathType: Prefix
   tls: []
+networkPolicy:
+  enabled: true
+  ingressControllerNamespace: ingress-nginx
 resources:
   requests:
     cpu: 100m

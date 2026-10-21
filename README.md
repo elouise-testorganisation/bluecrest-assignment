@@ -1,43 +1,44 @@
 # Bluecrest time-series app
 
-A minimal Streamlit application that reads `src/data.csv` on startup and plots numeric time series against a `date` column.
+A minimal Streamlit application that cleans a CSV and plots numeric time series against a date column. Isolated missing or malformed cells do not prevent plotting.
 
 ## Local development
 
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-pip install -r src/requirements.txt
+pip install -r src/app/requirements.txt
 cd src
-streamlit run app.py
+PYTHONPATH=app streamlit run app/app.py
 ```
 
-Populate `src/data.csv` with a header such as `date,value` and rows of ISO dates and numeric values. The CSV is intentionally empty in this initial commit.
+Set `BLUECREST_DATA_FILE` to select a local CSV; the container defaults to `/data/data.csv`.
 
-Run tests with `cd src && python -m unittest discover -v`.
+Run tests with `cd src && PYTHONPATH=app python -m unittest discover -s test -v`.
 
 ## Container
 
 ```bash
 docker build -t bluecrest:dev ./src
-docker run --rm -p 8501:8501 -v "$PWD/src/data.csv:/app/data.csv:ro" bluecrest:dev
+docker run --rm -p 8501:8501 -v "$PWD/src/data/data.csv:/data/data.csv:ro" bluecrest:dev
 ```
 
 ## Kubernetes / Helm
 
-The versioned Helm chart is in `deployment/helm/bluecrest` (chart version `0.1.0`). It defines a Deployment and ClusterIP Service. Before deploying, create a ConfigMap named `bluecrest-data` containing a `data.csv` key. The chart mounts that key read-only at `/app/data.csv`.
+All charts are consolidated under `deployment/helm`: the app chart is `deployment/helm/timeseries-application`, and static cluster prerequisites are `deployment/helm/cluster-infrastructure`. The app uses a ClusterIP Service and public Ingress is disabled by default. Its NetworkPolicy denies ingress unless optional ingress is enabled and routed through the configured ingress controller.
 
 ```bash
-kubectl create configmap bluecrest-data --from-file=data.csv=src/data.csv
-helm upgrade --install bluecrest deployment/helm/bluecrest --namespace bluecrest --create-namespace
+helm upgrade --install cluster-infrastructure deployment/helm/cluster-infrastructure --namespace default --wait
+kubectl create configmap bluecrest-data --from-file=data.csv=src/data/data.csv --namespace bluecrest-prod
+helm upgrade --install timeseries-application deployment/helm/timeseries-application --namespace bluecrest-prod --values deployment/helm/timeseries-application/values-prod.yaml
 ```
 
-The deploy workflow currently validates the chart and intentionally skips cluster deployment until a real cluster is available.
+NetworkPolicy enforcement depends on the cluster CNI and does not replace node/cloud firewall controls.
 
 ## GitHub Actions
 
-- **Tests**: manual, reusable via `workflow_call`, and PR label `runTests`. Feature PR runs publish a `testsPassed` check against the exact tested head SHA.
-- **Build image**: manual, reusable, and PR label `buildImage`. Main builds publish versioned `prod` images to GHCR; feature builds publish `dev` images tagged with branch and short commit SHA. Feature PR runs publish a `buildPassed` check against the tested SHA.
-- **Deploy**: runs on pushes to `main`, manual dispatch with a ref, or PR label `deployDev`; it runs tests, builds the image, and lints the chart before logging that the fictional-cluster deployment was skipped.
+- **Tests**: manual, reusable via `workflow_call`, and PR label `runTests`. `testsPassed` is published to the tested commit on main and feature branches.
+- **Build image**: manual, reusable, and PR label `buildImage`. Main builds publish versioned `prod` images to GHCR; feature builds publish `dev` images tagged with branch and short commit SHA. `buildPassed` is published to the tested commit on main and feature branches.
+- **Deploy**: development and production workflows run tests and build the image before deployment. Static cluster resources are bootstrapped with `apply-infrastructure`.
 
-Ensure the repository's Actions settings permit workflows to write packages and checks. For private GHCR images, configure an image pull secret in the target cluster when one exists.
+Ensure Actions can write packages and checks. For private GHCR images, configure an image pull secret in the target cluster.

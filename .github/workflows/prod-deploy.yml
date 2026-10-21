@@ -84,9 +84,9 @@ jobs:
             VERSION="$(grep -E '^version\s*=' src/app/pyproject.toml | head -1 | cut -d '"' -f2)"
           fi
           echo "Deploying prod image version $VERSION"
-          helm upgrade --install bluecrest deployment/helm/bluecrest \
+          helm upgrade --install timeseries-application deployment/helm/timeseries-application \
             --namespace bluecrest-prod \
-            --values deployment/helm/bluecrest/values-prod.yaml \
+            --values deployment/helm/timeseries-application/values-prod.yaml \
             --set image.tag="$VERSION" \
             --wait --timeout 180s
       - name: Verify rollout and HTTP health endpoint

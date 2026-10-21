@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -5,7 +6,7 @@ import streamlit as st
 
 from data_loader import load_data
 
-DATA_FILE = Path("/data/data.csv")
+DATA_FILE = Path(os.environ.get("BLUECREST_DATA_FILE", "/data/data.csv"))
 
 st.set_page_config(page_title="Bluecrest time series", layout="wide")
 st.title("Bluecrest time series viewer")
@@ -16,7 +17,7 @@ if not DATA_FILE.exists():
     st.stop()
 
 try:
-    data = load_data(str(DATA_FILE))
+    data = load_data(DATA_FILE)
 except pd.errors.EmptyDataError:
     st.info("data.csv is empty. Add a CSV with a 'date' column and at least one numeric column.")
     st.stop()
@@ -24,11 +25,7 @@ except (ValueError, pd.errors.ParserError) as exc:
     st.error(f"Could not read data.csv: {exc}")
     st.stop()
 
-if "date" not in data.columns:
-    st.error("CSV must contain a 'date' column.")
-    st.stop()
-
-value_columns = [c for c in data.columns if c != "date" and pd.api.types.is_numeric_dtype(data[c])]
+value_columns = [column for column in data.columns if column != "date"]
 if not value_columns:
     st.warning("No numeric series found. Add one or more numeric columns alongside 'date'.")
     st.stop()
@@ -36,6 +33,8 @@ if not value_columns:
 data = data.sort_values("date").set_index("date")
 selected = st.multiselect("Series to plot", value_columns, default=value_columns[:1])
 if selected:
+    # Streamlit's line chart accepts NaNs, preserving gaps instead of failing
+    # or fabricating values for missing observations.
     st.line_chart(data[selected])
 else:
     st.info("Select at least one series to display.")

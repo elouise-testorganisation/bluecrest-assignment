@@ -21,7 +21,7 @@ jobs:
           kubectl cluster-info
       - name: Apply static cluster resources
         run: |
-          helm upgrade --install bluecrest-cluster infrastructure/helm/bluecrest-cluster \
+          helm upgrade --install cluster-infrastructure deployment/helm/cluster-infrastructure \
             --namespace default --wait --timeout 120s
       - name: Configure production GHCR pull secret
         env:
