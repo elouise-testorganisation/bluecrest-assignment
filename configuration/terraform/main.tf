@@ -28,13 +28,3 @@ resource "github_branch_protection" "main" {
     dismissal_restrictions          = ["/elouise-matthews"]
   }
 }
-
-# Explicitly listed collaborators are set to read-only. Public reviewers do
-# not need collaborator access; they can view the repository and submit PRs
-# from forks. List any collaborators who should retain read-only access.
-resource "github_repository_collaborator" "read_only" {
-  for_each   = var.read_only_collaborators
-  repository = github_repository.this.name
-  username   = each.value
-  permission = "pull"
-}
