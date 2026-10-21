@@ -1,13 +1,15 @@
 name: Build image
 
-# 1. Resolve ref: Identify the exact commit SHA to build. Take note if isMain. 
-# 2. Checkout sha. 
-# 3. Set up Docker: Configure QEMU and Buildx for multi-architecture builds.
-# 4. Log in to GHCR
-# 5. Set image tags: Main builds use production version tags and latest; other builds use the short commit SHA.
-# 6. Build and push: Build amd64 and arm64 images and push them to GHCR.
-# 7. Publish check: Report buildPassed against the exact commit SHA.
-# 8. Fail on errors
+# 1. Resolve ref: Identify the exact commit SHA to build and determine whether it is main.
+# 2. Checkout the resolved commit SHA.
+# 3. Set up Docker and Helm: Configure QEMU and Buildx for multi-architecture builds.
+# 4. Log in to GHCR.
+# 5. Set image and chart versions: Main builds use production image tags and the chart version; other builds use the short SHA.
+# 6. Build and push the amd64 and arm64 images to GHCR.
+# 7. Publish imageBuildPassed against the exact commit SHA.
+# 8. Package and push the timeseries-application Helm chart to GHCR as an OCI artifact.
+# 9. Publish stackBuildPassed against the exact commit SHA.
+# 10. Fail if either the image or chart build fails.
 
 on:
   workflow_dispatch:
@@ -35,7 +37,7 @@ jobs:
     if: inputs.ref != '' || github.event_name != 'pull_request' || github.event.label.name == 'buildImage'
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve ref to commit SHA
+      - name: Resolve ref to commit SHA and identify main builds
         id: target
         uses: actions/github-script@v7
         env:
@@ -63,13 +65,14 @@ jobs:
           ref: ${{ steps.target.outputs.sha }}
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-      - name: Log in to GHCR
+      - uses: azure/setup-helm@v4
+      - name: Log in to GHCR for image publishing
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Define image tags
+      - name: Define image and chart versions
         id: meta
         shell: bash
         env:
@@ -79,16 +82,24 @@ jobs:
         run: |
           IMAGE="ghcr.io/${REPOSITORY,,}"
           SHORT_SHA="${REF_SHA:0:7}"
+          BASE_CHART_VERSION="$(awk '$1 == "version:" {print $2; exit}' deployment/helm/timeseries-application/Chart.yaml)"
+          if [[ -z "$BASE_CHART_VERSION" ]]; then
+            echo "Could not read timeseries-application chart version." >&2
+            exit 1
+          fi
           if [[ "$IS_MAIN" == "true" ]]; then
             VERSION="$(git describe --tags --exact-match "${REF_SHA}" 2>/dev/null || true)"
             VERSION="${VERSION#v}"
             if [[ -z "$VERSION" ]]; then VERSION="$(grep -E '^version\s*=' src/app/pyproject.toml | head -1 | cut -d '"' -f2)"; fi
+            CHART_VERSION="$BASE_CHART_VERSION"
             echo "image=${IMAGE}/prod" >> "$GITHUB_OUTPUT"
             echo "tags=${IMAGE}/prod:${VERSION},${IMAGE}/prod:latest" >> "$GITHUB_OUTPUT"
           else
+            CHART_VERSION="${BASE_CHART_VERSION}-dev.${SHORT_SHA}"
             echo "image=${IMAGE}/dev" >> "$GITHUB_OUTPUT"
             echo "tags=${IMAGE}/dev:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           fi
+          echo "chart_version=$CHART_VERSION" >> "$GITHUB_OUTPUT"
       - name: Build and push multi-architecture image
         id: image_build
         continue-on-error: true
@@ -98,7 +109,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-      - name: Publish buildPassed check on tested commit
+      - name: Publish imageBuildPassed check on tested commit
         if: always() && steps.target.outputs.sha != ''
         uses: actions/github-script@v7
         env:
@@ -109,12 +120,56 @@ jobs:
             await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              name: 'buildPassed',
+              name: 'imageBuildPassed',
               head_sha: process.env.TESTED_SHA,
               status: 'completed',
               conclusion: process.env.BUILD_RESULT === 'success' ? 'success' : 'failure',
-              output: { title: 'Container image build', summary: process.env.BUILD_RESULT === 'success' ? 'Multi-architecture image built and pushed to GHCR.' : 'Image build or push failed. See this workflow run for details.' }
+              output: {
+                title: 'Container image build',
+                summary: process.env.BUILD_RESULT === 'success'
+                  ? 'Multi-architecture image built and pushed to GHCR.'
+                  : 'Image build or push failed. See this workflow run for details.'
+              }
             });
-      - name: Fail workflow when image build fails
-        if: steps.image_build.outcome != 'success'
+      - name: Package and push timeseries-application Helm chart
+        id: chart_build
+        if: always() && steps.target.outputs.sha != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          CHART_VERSION: ${{ steps.meta.outputs.chart_version }}
+          REPOSITORY: ${{ github.repository }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          helm package deployment/helm/timeseries-application \
+            --version "$CHART_VERSION" \
+            --destination "$RUNNER_TEMP"
+          PACKAGE="$RUNNER_TEMP/timeseries-application-${CHART_VERSION}.tgz"
+          printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io \
+            --username "$GITHUB_ACTOR" --password-stdin
+          helm push "$PACKAGE" "oci://ghcr.io/${REPOSITORY,,}/charts"
+      - name: Publish stackBuildPassed check on tested commit
+        if: always() && steps.target.outputs.sha != ''
+        uses: actions/github-script@v7
+        env:
+          STACK_RESULT: ${{ steps.chart_build.outcome }}
+          TESTED_SHA: ${{ steps.target.outputs.sha }}
+        with:
+          script: |
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'stackBuildPassed',
+              head_sha: process.env.TESTED_SHA,
+              status: 'completed',
+              conclusion: process.env.STACK_RESULT === 'success' ? 'success' : 'failure',
+              output: {
+                title: 'Timeseries application Helm chart',
+                summary: process.env.STACK_RESULT === 'success'
+                  ? 'Versioned Helm chart packaged and pushed to GHCR as an OCI artifact.'
+                  : 'Helm chart packaging or push failed. See this workflow run for details.'
+              }
+            });
+      - name: Fail workflow when image or chart build fails
+        if: always() && (steps.image_build.outcome != 'success' || steps.chart_build.outcome != 'success')
         run: exit 1

@@ -2,12 +2,12 @@ name: Production deploy
 
 # 1. Select ref: Use the pushed commit or require main for manual deployments.
 # 2. Run tests: Call the tests pipeline.
-# 3. Build image: Call the build pipeline.
-# 4. Checkout: Get the selected code on the deployment runner.
-# 5. Verify prerequisites: Check Minikube access, production namespace and pull secret.
+# 3. Build image and publish the matching Helm chart.
+# 4. Checkout the selected code for data and version metadata.
+# 5. Verify Minikube access, production namespace and pull secret.
 # 6. Apply data: Create the production data ConfigMap.
-# 7. Determine version: Use the matching Git tag, or fall back to the version in pyproject.toml.
-# 8. Deploy: Install the Helm release into bluecrest-prod using that image version.
+# 7. Determine the application image version and published chart version.
+# 8. Pull and deploy the published timeseries-application Helm chart from GHCR.
 # 9. Verify: Check rollout status and the HTTP health endpoint.
 
 on:
@@ -78,20 +78,27 @@ jobs:
           kubectl create configmap bluecrest-data \
             --from-file=data.csv=src/data/data.csv \
             --namespace bluecrest-prod --dry-run=client -o yaml | kubectl apply -f -
-      - name: Deploy production Helm release
-        id: helm
+      - name: Pull and deploy published production Helm chart
         env:
           DEPLOY_REF: ${{ needs.select.outputs.ref }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           VERSION="$(git describe --tags --exact-match "$DEPLOY_REF" 2>/dev/null || true)"
           VERSION="${VERSION#v}"
           if [[ -z "$VERSION" ]]; then
             VERSION="$(grep -E '^version\s*=' src/app/pyproject.toml | head -1 | cut -d '"' -f2)"
           fi
-          echo "Deploying prod image version $VERSION"
-          helm upgrade --install timeseries-application deployment/helm/timeseries-application \
+          CHART_VERSION="$(awk '$1 == "version:" {print $2; exit}' deployment/helm/timeseries-application/Chart.yaml)"
+          CHART_REF="oci://ghcr.io/${GITHUB_REPOSITORY,,}/charts/timeseries-application"
+          CHART_ROOT="$RUNNER_TEMP/published-chart"
+          printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          helm pull "$CHART_REF" --version "$CHART_VERSION" --untar --untardir "$CHART_ROOT"
+          CHART_DIR="$CHART_ROOT/timeseries-application"
+          echo "Deploying prod image version $VERSION with chart version $CHART_VERSION"
+          helm upgrade --install timeseries-application "$CHART_DIR" \
             --namespace bluecrest-prod \
-            --values deployment/helm/timeseries-application/values-prod.yaml \
+            --values "$CHART_DIR/values-prod.yaml" \
             --set image.tag="$VERSION" \
             --wait --timeout 180s
       - name: Verify rollout and HTTP health endpoint
