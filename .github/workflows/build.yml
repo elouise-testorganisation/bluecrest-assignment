@@ -97,7 +97,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
       - name: Publish buildPassed check on tested commit
-        if: always() && steps.target.outputs.branch != 'main'
+        if: always() && steps.commit.outputs.sha != ''
         uses: actions/github-script@v7
         env:
           BUILD_RESULT: ${{ steps.image_build.outcome }}
