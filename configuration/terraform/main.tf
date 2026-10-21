@@ -13,11 +13,11 @@ resource "github_repository" "this" {
 # On a personal repository, the owner is the administrator; GitHub does not
 # support organization teams/admin groups for personal repositories.
 resource "github_branch_protection" "main" {
-  repository_id              = github_repository.this.name
-  pattern                    = "main"
-  enforce_admins             = false
-  allows_deletions           = false
-  allows_force_pushes        = false
+  repository_id                  = github_repository.this.name
+  pattern                        = "main"
+  enforce_admins                 = false
+  allows_deletions               = false
+  allows_force_pushes            = false
   require_conversation_resolution = true
 
   required_pull_request_reviews {
