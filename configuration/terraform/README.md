@@ -1,43 +1,35 @@
 # GitHub repository configuration
 
-This Terraform configuration manages the existing `elouise-matthews/bluecrest-assignment` repository and its `main` branch protection.
+This Terraform configuration manages the existing `elouise-matthews/bluecrest-assignment` repository and protection for its `main` branch.
 
 ## Intended access model
 
-- The desired release state is **public** so reviewers can view the code without being invited. Public means anyone on the internet can view and clone the repository; it is not private link-only access.
-- The Terraform configuration declares `visibility = "public"`. **Do not run `terraform apply` until you are ready to make the repository public.** Terraform will plan a visibility change if the live repository is still private.
-- Before publishing, inspect the complete repository history, branches, tags, Actions logs/artifacts, and files for credentials, tokens, personal data, and anything else that must not be public. Removing a secret from the latest version does not remove it from Git history; rotate any secret that was ever committed.
-- The repository is owned by the personal account `elouise-matthews`, which is its administrator. GitHub teams/admin groups are not available for personal repositories.
-- Anonymous visitors receive public read access, not write access. Reviewers can submit changes via pull requests from forks without being added as collaborators.
-- The `main` branch requires pull requests and a code-owner approval. The root `.github/CODEOWNERS` file names `@elouise-matthews` as the code owner for every file.
+- The desired release state is **public** so reviewers can view and clone the repository without invitations. Public means anyone on the internet can view it; it is not link-only access.
+- **Do not run `apply-repo-config` until you are ready to publish.** Applying this configuration changes repository visibility to public if it is still private.
+- Before publishing, inspect the full Git history, all branches and tags, Actions logs/artifacts, and files for credentials, tokens, personal data, or other sensitive information. Removing a secret from the latest version does not remove it from earlier commits; rotate any secret that was ever committed.
+- This is a personal-account repository. The owner `elouise-matthews` is the administrator; GitHub organization teams/admin groups are not available here.
+- No collaborator group is needed for public reviewers. Anonymous visitors have read-only access and can submit changes through pull requests from forks. They do not get direct write access.
+- The `main` branch requires a pull request and a code-owner approval. The root `.github/CODEOWNERS` file names `@elouise-matthews` as code owner for every file.
 - Stale approvals are dismissed when new commits are pushed; review conversations must be resolved before merge. Only the owner can dismiss reviews.
 - Administrators can bypass branch protection because `enforce_admins = false`, preserving an owner recovery path.
 
-GitHub allows other users to submit an “Approve” review, but a non-owner approval alone cannot satisfy the required code-owner review. Code-owner review enforcement requires GitHub to recognize the owner as a code owner with write access.
+GitHub allows other users to submit an “Approve” review, but a non-owner approval alone cannot satisfy the required code-owner review.
 
-## Prerequisites
+## Manual workflow
 
-- Terraform 1.5 or later.
-- A GitHub token available in the `GITHUB_TOKEN` environment variable with permission to administer this repository and manage branch protection/collaborators. Do not commit the token or Terraform state.
-- Repository and branch-protection permissions may depend on the GitHub plan and repository settings.
+The `.github/workflows/apply-repo-config.yml` workflow is the only workflow for this Terraform configuration. It runs **only when manually dispatched**, accepts a `branch_name` input, checks formatting and validates the configuration, imports the current repository and existing `main` branch protection into the run's temporary state, then plans and applies the configuration.
 
-## First-time setup
+Before using it:
 
-Run these commands from this directory. Import the existing resources before planning; otherwise Terraform may try to create a repository that already exists.
+1. Add a repository Actions secret named `REPO_CONFIG_TOKEN`. Use a fine-grained personal access token scoped only to this repository, with **Administration: read and write** permission. Keep the token private and rotate it if exposed.
+2. If your repository uses GitHub Environments, protect the `repository-configuration` environment so only you can approve/start deployments.
+3. Run **Actions → apply-repo-config → Run workflow**, and enter the branch containing the Terraform configuration you intend to apply. Only run a trusted branch you have reviewed.
+4. Read the run logs and review the planned changes. If the repository is still private, the apply step will make it public.
 
-```sh
-terraform init
-terraform import github_repository.this elouise-matthews/bluecrest-assignment
-terraform import github_branch_protection.main bluecrest-assignment:main
-cp terraform.tfvars.example terraform.tfvars
-# Add only known collaborators who should have read-only access.
-terraform plan
-```
+The workflow uses temporary local state for each run: it imports the live repository and existing branch protection afresh, applies changes, and does not persist the state or store it as an artifact. This avoids committing state to the repository. Runs are serialized to avoid concurrent changes. The workflow must be run by an authorized user with permission to dispatch it.
 
-Review the plan carefully before running `terraform apply`. If the live repository is still private, the plan will make it public. Confirm that you are ready to publish before applying. Review any unrelated settings Terraform proposes to change. Keep `terraform.tfstate`, `.terraform/`, plan files, and any real `terraform.tfvars` out of version control. The local state file may contain sensitive repository metadata; store it securely and back it up safely.
+## Terraform scope
 
-## Scope and limitations
+The configuration manages the repository settings and `main` branch protection only. It does not manage collaborator permissions: public reviewers need no collaborator access. If you later add people who need direct write access, manage that separately and grant the minimum required permissions.
 
-The collaborator resource sets the permission of each username listed in `read_only_collaborators` to read-only; it does not automatically discover or remove unlisted collaborators. Public reviewers do not need to be listed as collaborators. Inventory existing collaborators and list them if you want Terraform to manage their access explicitly.
-
-Because this is a personal repository, Terraform cannot create a separate one-person GitHub admin team. If you later move the repository into an organization, an organization team can be created and managed separately.
+For local validation, use Terraform 1.5 or later. Do not commit `terraform.tfstate`, `.terraform/`, plan files, credentials, or local variable files.
