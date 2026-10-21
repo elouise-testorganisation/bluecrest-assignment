@@ -1,4 +1,4 @@
-Bluecrest is deployed as a ClusterIP service on port {{ .Values.service.port }}.
+The time-series application is deployed as a ClusterIP service on port {{ .Values.service.port }}.
 To access it locally, run:
   kubectl port-forward svc/{{ include "bluecrest.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
 

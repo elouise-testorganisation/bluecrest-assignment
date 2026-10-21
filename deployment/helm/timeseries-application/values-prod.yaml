@@ -1,11 +1,11 @@
-replicaCount: 1
+replicaCount: 2
 image:
-  repository: ghcr.io/elouise-matthews/bluecrest-assignment/dev
-  tag: "dev-latest"
-  pullPolicy: Always
+  repository: ghcr.io/elouise-matthews/bluecrest-assignment/prod
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
 imagePullSecrets:
   - name: ghcr-pull-secret
-nameOverride: ""
+nameOverride: bluecrest
 fullnameOverride: bluecrest
 service:
   type: ClusterIP
@@ -20,13 +20,16 @@ ingress:
         - path: /
           pathType: Prefix
   tls: []
+networkPolicy:
+  enabled: true
+  ingressControllerNamespace: ingress-nginx
 resources:
   requests:
-    cpu: 50m
-    memory: 96Mi
+    cpu: 100m
+    memory: 128Mi
   limits:
-    cpu: 300m
-    memory: 384Mi
+    cpu: 500m
+    memory: 512Mi
 data:
   configMapName: bluecrest-data
   fileName: data.csv

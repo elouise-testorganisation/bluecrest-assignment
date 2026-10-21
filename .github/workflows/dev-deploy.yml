@@ -107,9 +107,9 @@ jobs:
           SAFE_BRANCH="$(echo "$DEPLOY_BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g' | sed -E 's/^-+|-+$//g')"
           IMAGE_TAG="${SAFE_BRANCH}-${SHORT_SHA}"
           echo "Deploying dev image tag $IMAGE_TAG into transient namespace $NS"
-          helm upgrade --install bluecrest deployment/helm/bluecrest \
+          helm upgrade --install timeseries-application deployment/helm/timeseries-application \
             --namespace "$NS" \
-            --values deployment/helm/bluecrest/values-dev.yaml \
+            --values deployment/helm/timeseries-application/values-dev.yaml \
             --set image.tag="$IMAGE_TAG" \
             --wait --timeout 180s
       - name: Verify rollout and HTTP health endpoint
