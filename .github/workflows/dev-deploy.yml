@@ -1,10 +1,21 @@
 name: Development deploy
 
+# 1. Select ref: Choose the PR commit or manually specified ref; reject main.
+# 2. Run tests: Call the tests pipeline.
+# 3. Build image: Call the build pipeline.
+# 4. Checkout: Get the selected code on the deployment runner.
+# 5. Create namespace: Create a unique temporary Kubernetes namespace.
+# 6. Configure access: Set up GHCR image-pull credentials.
+# 7. Apply data: Create the development data ConfigMap.
+# 8. Deploy: Install the Helm release using the commit SHA image tag.
+# 9. Verify: Check rollout status and the HTTP health endpoint.
+# 10. Cleanup: Wait 10 minutes, then delete the temporary namespace.
+
 on:
   workflow_dispatch:
     inputs:
-      branch:
-        description: Feature branch to deploy
+      ref:
+        description: Branch, tag, or SHA to deploy
         required: true
         type: string
   pull_request:
@@ -22,37 +33,33 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       ref: ${{ steps.target.outputs.ref }}
-      branch: ${{ steps.target.outputs.branch }}
     steps:
       - id: target
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          INPUT_REF: ${{ inputs.ref }}
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
-            echo "branch=${{ github.head_ref }}" >> "$GITHUB_OUTPUT"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            echo "ref=$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
           else
-            BRANCH="${{ inputs.branch }}"
-            if [[ "$BRANCH" == "main" ]]; then echo "Dev deploy requires a feature branch." >&2; exit 1; fi
-            echo "ref=$BRANCH" >> "$GITHUB_OUTPUT"
-            echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+            if [[ "$INPUT_REF" == "main" || "$INPUT_REF" == "refs/heads/main" ]]; then echo "Dev deploy requires a non-main ref." >&2; exit 1; fi
+            echo "ref=$INPUT_REF" >> "$GITHUB_OUTPUT"
           fi
 
   tests:
     needs: select
     uses: ./.github/workflows/tests.yml
     with:
-      skip_label_gate: true
       ref: ${{ needs.select.outputs.ref }}
-      branch: ${{ needs.select.outputs.branch }}
     secrets: inherit
 
   build:
     needs: [select, tests]
     uses: ./.github/workflows/build.yml
     with:
-      skip_label_gate: true
       ref: ${{ needs.select.outputs.ref }}
-      branch: ${{ needs.select.outputs.branch }}
     secrets: inherit
 
   deploy:
@@ -69,8 +76,6 @@ jobs:
       - name: Create unique transient namespace
         id: namespace
         shell: bash
-        env:
-          BRANCH: ${{ needs.select.outputs.branch }}
         run: |
           NS="bluecrest-dev-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "name=$NS" >> "$GITHUB_OUTPUT"
@@ -98,14 +103,10 @@ jobs:
             --namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
       - name: Deploy development Helm release
         env:
-          DEPLOY_REF: ${{ needs.select.outputs.ref }}
-          DEPLOY_BRANCH: ${{ needs.select.outputs.branch }}
           NS: ${{ steps.namespace.outputs.name }}
         shell: bash
         run: |
-          SHORT_SHA="$(git rev-parse --short "$DEPLOY_REF")"
-          SAFE_BRANCH="$(echo "$DEPLOY_BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g' | sed -E 's/^-+|-+$//g')"
-          IMAGE_TAG="${SAFE_BRANCH}-${SHORT_SHA}"
+          IMAGE_TAG="$(git rev-parse HEAD | cut -c1-7)"
           echo "Deploying dev image tag $IMAGE_TAG into transient namespace $NS"
           helm upgrade --install timeseries-application deployment/helm/timeseries-application \
             --namespace "$NS" \
@@ -132,14 +133,14 @@ jobs:
 
   cleanup:
     needs: [select, deploy]
-    if: success()
+    if: always() && needs.select.result == 'success' && needs.deploy.outputs.namespace != ''
     runs-on: [self-hosted, linux, minikube]
     steps:
       - name: Delete transient development namespace
         env:
           NS: ${{ needs.deploy.outputs.namespace }}
         run: |
-          echo "Waiting 10 seconds before deleting $NS (temporary retention; change to 600 seconds for the requested 10-minute retention)."
-          sleep 10
+          echo "Keeping $NS for 10 minutes before cleanup."
+          sleep 600
           kubectl delete namespace "$NS" --wait=false
           echo "Transient development namespace $NS deletion requested."
