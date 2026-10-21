@@ -46,4 +46,4 @@ if selected:
     st.line_chart(data[selected])
 else:
     st.info("Select at least one series to display.")
-st.dataframe(data.reset_index(), use_container_width=True)
+st.dataframe(data.reset_index(), width="stretch")
