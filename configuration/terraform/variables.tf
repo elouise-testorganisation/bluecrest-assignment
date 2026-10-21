@@ -9,9 +9,3 @@ variable "repository_name" {
   type        = string
   default     = "bluecrest-assignment"
 }
-
-variable "read_only_collaborators" {
-  description = "GitHub usernames who should have read-only (pull) access. List every non-owner collaborator to manage."
-  type        = set(string)
-  default     = []
-}
