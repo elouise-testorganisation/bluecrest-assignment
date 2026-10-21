@@ -1,0 +1,104 @@
+name: apply-repo-config
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch_name:
+        description: "Branch containing the Terraform configuration to validate and apply"
+        required: true
+        type: string
+        default: "main"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apply-repo-config
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Validate and apply GitHub repository configuration
+    runs-on: ubuntu-latest
+    environment: repository-configuration
+    defaults:
+      run:
+        working-directory: configuration/terraform
+    steps:
+      - name: Validate branch input
+        env:
+          BRANCH_NAME: ${{ inputs.branch_name }}
+        run: |
+          if [[ -z "$BRANCH_NAME" || "$BRANCH_NAME" == -* || "$BRANCH_NAME" == *".."* ]]; then
+            echo "Provide a valid branch name."
+            exit 1
+          fi
+
+      - name: Check out selected branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch_name }}
+          persist-credentials: false
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.0"
+
+      - name: Check Terraform formatting
+        run: terraform fmt -check -diff -recursive
+
+      - name: Initialize Terraform
+        run: terraform init -input=false -backend=false
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_CONFIG_TOKEN }}
+
+      - name: Validate Terraform
+        run: terraform validate
+
+      # This workflow deliberately uses ephemeral local state: each run imports
+      # the existing repository and any existing main branch protection first.
+      # That avoids committing state or storing it as an Actions artifact.
+      - name: Import existing repository into this run's state
+        run: terraform import -input=false github_repository.this "$GITHUB_REPOSITORY"
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_CONFIG_TOKEN }}
+
+      - name: Import existing main branch protection when present
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_CONFIG_TOKEN }}
+          GH_TOKEN: ${{ secrets.REPO_CONFIG_TOKEN }}
+        run: |
+          set +e
+          status="$(curl --silent --show-error \
+            --output /tmp/main-protection.json \
+            --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GITHUB_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/main/protection")"
+          result=$?
+          set -e
+          if [[ $result -ne 0 ]]; then
+            echo "Could not query current branch protection."
+            exit "$result"
+          fi
+          if [[ "$status" == "200" ]]; then
+            terraform import -input=false github_branch_protection.main "${GITHUB_REPOSITORY#*/}:main"
+          elif [[ "$status" == "404" ]]; then
+            echo "No existing main branch protection; Terraform will create it."
+          else
+            echo "Unexpected GitHub API status while checking branch protection: $status"
+            cat /tmp/main-protection.json
+            exit 1
+          fi
+
+      - name: Plan repository configuration
+        run: terraform plan -input=false -out=tfplan
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_CONFIG_TOKEN }}
+
+      - name: Apply repository configuration
+        run: terraform apply -input=false -auto-approve tfplan
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_CONFIG_TOKEN }}
