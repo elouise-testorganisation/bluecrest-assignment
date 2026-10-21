@@ -1,8 +1,16 @@
 import os
+import sys
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+
+# Streamlit's AppTest executes this file directly, so the app directory is
+# not guaranteed to be on sys.path. Ensure sibling modules can be imported
+# both in tests and when the app is launched from another working directory.
+APP_DIR = Path(__file__).resolve().parent
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
 
 from data_loader import load_data
 
@@ -38,4 +46,4 @@ if selected:
     st.line_chart(data[selected])
 else:
     st.info("Select at least one series to display.")
-st.dataframe(data.reset_index(), use_container_width=True)
+st.dataframe(data.reset_index(), width="stretch")

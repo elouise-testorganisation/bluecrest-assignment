@@ -1,32 +1,29 @@
 name: Tests
 
+# 1. Select ref: choose the commit to test.
+# 2. Checkout: get the selected code.
+# 3. Record SHA: identify the exact commit.
+# 4. Set up Python 3.12.
+# 5. Install dependencies from src/app/requirements.txt.
+# 6. Run tests from src with PYTHONPATH set to the src directory.
+# 7. Publish the testsPassed check on the commit.
+# 8. Fail the workflow if tests fail.
+
 on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Branch, tag, or SHA to test
-        required: false
-        default: main
+        description: Branch, tag, or SHA to build
+        required: true
         type: string
   workflow_call:
     inputs:
-      branch:
-        description: Branch name associated with the tested ref
-        required: false
-        type: string
-      skip_label_gate:
-        description: Skip the PR-label gate when invoked by the deploy orchestrator
-        required: false
-        type: boolean
-        default: false
       ref:
-        description: Branch, tag, or SHA to test
-        required: false
+        description: Branch, tag, or SHA to build
+        required: true
         type: string
-        default: main
   pull_request:
-    types: [labeled, synchronize, reopened]
-
+    types: [labeled]
 
 permissions:
   contents: read
@@ -34,22 +31,20 @@ permissions:
 
 jobs:
   tests:
-    if: inputs.skip_label_gate || github.event_name != 'pull_request' || (github.event.action != 'labeled' || github.event.label.name == 'runTests') && (github.event.action != 'synchronize' && github.event.action != 'reopened' || contains(github.event.pull_request.labels.*.name, 'runTests'))
+    if: inputs.ref != '' || github.event_name != 'pull_request' || (github.event.action == 'labeled' && github.event.label.name == 'runTests')
     runs-on: ubuntu-latest
     steps:
       - name: Select tested ref
         id: target
-        shell: bash
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
-            echo "branch=${{ github.head_ref }}" >> "$GITHUB_OUTPUT"
-          elif [[ -n "${{ inputs.ref }}" ]]; then
-            echo "ref=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"
-            if [[ -n "${{ inputs.branch }}" ]]; then echo "branch=${{ inputs.branch }}" >> "$GITHUB_OUTPUT"; else echo "branch=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"; fi
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            echo "ref=$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-            echo "branch=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "ref=$INPUT_REF" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@v4
         with:
@@ -69,7 +64,7 @@ jobs:
         continue-on-error: true
         working-directory: src
         env:
-          PYTHONPATH: app
+          PYTHONPATH: .
         run: python -m unittest discover -s test -v
       - name: Publish testsPassed check on tested commit
         if: always() && steps.commit.outputs.sha != ''

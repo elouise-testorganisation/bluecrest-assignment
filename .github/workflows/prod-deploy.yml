@@ -1,12 +1,22 @@
 name: Production deploy
 
+# 1. Select ref: Use the pushed commit SHA or require main for manual deployments.
+# 2. Run the tests workflow against that ref.
+# 3. Build and publish the application image and timeseries-application Helm chart to GHCR.
+# 4. Checkout the selected ref on the deployment runner; set up Helm and kubectl.
+# 5. Verify Minikube access, the production namespace and the GHCR pull secret.
+# 6. Apply the production data ConfigMap.
+# 7. Determine the application image version and published Helm chart version.
+# 8. Pull the published chart from GHCR and deploy it with values-prod.yaml.
+# 9. Verify the Kubernetes rollout and HTTP health endpoint.
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
-      branch:
-        description: Branch to deploy (production deployments must use main)
+      ref:
+        description: Ref to deploy (production deployments must use main)
         required: true
         default: main
         type: string
@@ -21,37 +31,32 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       ref: ${{ steps.target.outputs.ref }}
-      branch: ${{ steps.target.outputs.branch }}
     steps:
       - id: target
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_REF: ${{ inputs.ref }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            BRANCH="${{ inputs.branch }}"
-            if [[ "$BRANCH" != "main" ]]; then echo "Production deployment is only allowed from main." >&2; exit 1; fi
-            echo "ref=$BRANCH" >> "$GITHUB_OUTPUT"
-            echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ "$INPUT_REF" != "main" && "$INPUT_REF" != "refs/heads/main" ]]; then echo "Production deployment is only allowed from main." >&2; exit 1; fi
+            echo "ref=$INPUT_REF" >> "$GITHUB_OUTPUT"
           else
             echo "ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-            echo "branch=main" >> "$GITHUB_OUTPUT"
           fi
 
   tests:
     needs: select
     uses: ./.github/workflows/tests.yml
     with:
-      skip_label_gate: true
       ref: ${{ needs.select.outputs.ref }}
-      branch: ${{ needs.select.outputs.branch }}
     secrets: inherit
 
   build:
     needs: [select, tests]
     uses: ./.github/workflows/build.yml
     with:
-      skip_label_gate: true
       ref: ${{ needs.select.outputs.ref }}
-      branch: ${{ needs.select.outputs.branch }}
     secrets: inherit
 
   deploy:
@@ -73,20 +78,27 @@ jobs:
           kubectl create configmap bluecrest-data \
             --from-file=data.csv=src/data/data.csv \
             --namespace bluecrest-prod --dry-run=client -o yaml | kubectl apply -f -
-      - name: Deploy production Helm release
-        id: helm
+      - name: Pull and deploy published production Helm chart
         env:
           DEPLOY_REF: ${{ needs.select.outputs.ref }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           VERSION="$(git describe --tags --exact-match "$DEPLOY_REF" 2>/dev/null || true)"
           VERSION="${VERSION#v}"
           if [[ -z "$VERSION" ]]; then
             VERSION="$(grep -E '^version\s*=' src/app/pyproject.toml | head -1 | cut -d '"' -f2)"
           fi
-          echo "Deploying prod image version $VERSION"
-          helm upgrade --install timeseries-application deployment/helm/timeseries-application \
+          CHART_VERSION="$(awk '$1 == "version:" {print $2; exit}' deployment/helm/timeseries-application/Chart.yaml)"
+          CHART_REF="oci://ghcr.io/${GITHUB_REPOSITORY,,}/charts/timeseries-application"
+          CHART_ROOT="$RUNNER_TEMP/published-chart"
+          printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          helm pull "$CHART_REF" --version "$CHART_VERSION" --untar --untardir "$CHART_ROOT"
+          CHART_DIR="$CHART_ROOT/timeseries-application"
+          echo "Deploying prod image version $VERSION with chart version $CHART_VERSION"
+          helm upgrade --install timeseries-application "$CHART_DIR" \
             --namespace bluecrest-prod \
-            --values deployment/helm/timeseries-application/values-prod.yaml \
+            --values "$CHART_DIR/values-prod.yaml" \
             --set image.tag="$VERSION" \
             --wait --timeout 180s
       - name: Verify rollout and HTTP health endpoint

@@ -2,6 +2,7 @@ name: Bootstrap Minikube infrastructure
 
 on:
   workflow_dispatch:
+  
 
 permissions:
   contents: read
