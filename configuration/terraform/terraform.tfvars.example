@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars and list every non-owner collaborator who should
+# have read-only access. Leave empty if there are no collaborators.
+read_only_collaborators = [
+  # "contributor-github-login",
+]
