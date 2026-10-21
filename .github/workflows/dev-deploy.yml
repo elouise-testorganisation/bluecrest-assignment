@@ -1,15 +1,15 @@
 name: Development deploy
 
-# 1. Select ref: Choose the PR commit or manually specified ref; reject main.
-# 2. Run tests: Call the tests pipeline.
-# 3. Build image and publish the matching Helm chart.
-# 4. Checkout the selected code for data and version metadata.
+# 1. Select ref: Use the PR head SHA or manually specified ref; reject main.
+# 2. Run the tests workflow against that ref.
+# 3. Build and publish the application image and matching timeseries-application Helm chart to GHCR.
+# 4. Checkout the selected ref on the deployment runner; set up Helm and kubectl.
 # 5. Create a unique temporary Kubernetes namespace.
-# 6. Configure access: Set up GHCR image-pull credentials.
-# 7. Apply data: Create the development data ConfigMap.
-# 8. Pull and deploy the published timeseries-application Helm chart from GHCR.
-# 9. Verify: Check rollout status and the HTTP health endpoint.
-# 10. Cleanup: Wait 10 minutes, then delete the temporary namespace.
+# 6. Configure GHCR image-pull credentials in that namespace.
+# 7. Apply the development data ConfigMap.
+# 8. Pull the published SHA-versioned chart from GHCR and deploy it with values-dev.yaml.
+# 9. Verify the Kubernetes rollout and HTTP health endpoint.
+# 10. Wait 10 minutes, then delete the temporary namespace.
 
 on:
   workflow_dispatch:

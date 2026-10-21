@@ -1,15 +1,15 @@
 name: Build image
 
-# 1. Resolve ref: Identify the exact commit SHA to build and determine whether it is main.
+# 1. Resolve ref: Identify the exact commit SHA and determine whether this is a main build.
 # 2. Checkout the resolved commit SHA.
-# 3. Set up Docker and Helm: Configure QEMU and Buildx for multi-architecture builds.
-# 4. Log in to GHCR.
-# 5. Set image and chart versions: Main builds use production image tags and the chart version; other builds use the short SHA.
-# 6. Build and push the amd64 and arm64 images to GHCR.
+# 3. Set up Docker, QEMU, Buildx and Helm.
+# 4. Log in to GHCR for container image publishing.
+# 5. Set image tags and the Helm chart version: main uses production version tags and latest; other refs use the short SHA.
+# 6. Build and push the amd64 and arm64 application images to GHCR.
 # 7. Publish imageBuildPassed against the exact commit SHA.
 # 8. Package and push the timeseries-application Helm chart to GHCR as an OCI artifact.
 # 9. Publish stackBuildPassed against the exact commit SHA.
-# 10. Fail if either the image or chart build fails.
+# 10. Fail the workflow if either the image or chart build/push fails.
 
 on:
   workflow_dispatch:

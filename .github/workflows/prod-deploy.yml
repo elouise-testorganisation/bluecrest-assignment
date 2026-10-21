@@ -1,14 +1,14 @@
 name: Production deploy
 
-# 1. Select ref: Use the pushed commit or require main for manual deployments.
-# 2. Run tests: Call the tests pipeline.
-# 3. Build image and publish the matching Helm chart.
-# 4. Checkout the selected code for data and version metadata.
-# 5. Verify Minikube access, production namespace and pull secret.
-# 6. Apply data: Create the production data ConfigMap.
-# 7. Determine the application image version and published chart version.
-# 8. Pull and deploy the published timeseries-application Helm chart from GHCR.
-# 9. Verify: Check rollout status and the HTTP health endpoint.
+# 1. Select ref: Use the pushed commit SHA or require main for manual deployments.
+# 2. Run the tests workflow against that ref.
+# 3. Build and publish the application image and timeseries-application Helm chart to GHCR.
+# 4. Checkout the selected ref on the deployment runner; set up Helm and kubectl.
+# 5. Verify Minikube access, the production namespace and the GHCR pull secret.
+# 6. Apply the production data ConfigMap.
+# 7. Determine the application image version and published Helm chart version.
+# 8. Pull the published chart from GHCR and deploy it with values-prod.yaml.
+# 9. Verify the Kubernetes rollout and HTTP health endpoint.
 
 on:
   push:
