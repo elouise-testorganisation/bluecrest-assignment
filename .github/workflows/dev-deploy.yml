@@ -64,7 +64,7 @@ jobs:
 
   deploy:
     needs: [select, tests, build]
-    runs-on: [self-hosted, linux, minikube]
+    runs-on: ubuntu-latest
     outputs:
       namespace: ${{ steps.namespace.outputs.name }}
     steps:
