@@ -61,7 +61,7 @@ jobs:
 
   deploy:
     needs: [select, tests, build]
-    runs-on: [self-hosted, linux, minikube]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
