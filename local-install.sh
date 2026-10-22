@@ -25,7 +25,10 @@ done
 [[ -d "$CHART/templates" ]] || die "Helm chart not found: $CHART"
 
 # The chart expects a ConfigMap named bluecrest-data containing the key data.csv.
-mapfile -t CSV_FILES < <(find "$ROOT_DIR" -type f -name data.csv -not -path '*/.git/*' -not -path '*/.venv/*' -not -path '*/venv/*' -print)
+CSV_FILES=()
+while IFS= read -r file; do
+  CSV_FILES+=("$file")
+done < <(find "$ROOT_DIR" -type f -name data.csv -not -path '*/.git/*' -not -path '*/.venv/*' -not -path '*/venv/*' -print)
 if [[ "${#CSV_FILES[@]}" -eq 0 ]]; then
   die "Could not find data.csv anywhere in the repository. Put the app's data.csv in the repo, then rerun."
 elif [[ "${#CSV_FILES[@]}" -gt 1 ]]; then
