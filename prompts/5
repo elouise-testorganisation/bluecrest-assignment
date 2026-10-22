@@ -1,0 +1,7 @@
+please create a configuration/terraform section in this repo, and put the bare minimum files there to configure this repo as is.
+Then, I want to you add the following rules/config
+1. Only I shall be admin. 
+2. Admins can basically do everything.
+3. Everyone else can only view, and raise PRs to main.
+4. These PRs must be approved in order to merge to main.
+5. The only person who can approve PRs is me. (Use code owners if we can’t make this config rule)

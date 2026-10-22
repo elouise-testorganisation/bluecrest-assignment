@@ -1,0 +1,18 @@
+Create the following directories: 
+src --> contains a Dockerfile along side the example app which contains a basic streamlit python app that displays a timeseries that it plots from data which it reads from a csv file on startup. 
+deployment --> contains versioned helmcharts which encapsulate the relevant kubernetes resources in order to deploy this app to a fictional kubernetes cluster. I don't have one yet, so we will mock up the deployment in some way in the pipeline, but the charts and kubernetes files should be real. you can load the csv file with the data as a volume. 
+Also, regarding the csv file, leave it empty for now. I will find some example data later and upload it. 
+
+.github/workflows 
+--> a testing workflow that runs the whole test suite of the app 
+      it can either be triggered manually, by other workflows, or by a "runTests" tag on a PR. 
+      if it was triggered for main it should just succeed, if it was triggered for a feature branch, post a checkrun there setting "testsPassed" to sucessfully completed on the sha it was ran for. Not the head sha at the time of posting. (and the checkrun should say failed if the tests failed)
+
+--> a build workflow which builds the image and pushes to GHCR - "prod" images push to "prod" with real version tags and "dev" images send to "dev" with the feature branch name and commit sha used as the tag. 
+      it can either be triggered manually, by other workflows, or by a "buildImage" tag on a PR. 
+      if it was ran for a feature branch, post a checkrun on the commit saying "buildPassed" is sucessful. (and the checkrun should say failed if the build failed)
+
+--> a deploy workflow which 1. triggers the test pipeline 2. triggers the build pipeline 3. Uses the kubernetes and helm chart to deploy to the fictional cluster. (don't do any extravagant mocking here. write the lines but then just comment them out for now and print that it's done) 
+it can be triggered by 1. any push to main. 2. manual trigger with the branch to deploy from as an argument. 3. deployDev tag on a PR. 
+
+In all cases where you can not actually create the real thing for some reason, do not do extravagant mocking, but rather write the lines that would be necessary, and then just comment them out and print a log line saying what was done in that section.
