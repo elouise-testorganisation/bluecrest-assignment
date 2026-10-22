@@ -70,14 +70,14 @@ jobs:
       - uses: azure/setup-kubectl@v4
       - name: Verify Minikube access and prerequisites
         run: |
-          echo "Production prerequisites check skipped (simulated; no cluster changes made)"
+          echo "Would have checked Minikube access, the production namespace, and the GHCR pull secret"
           # Original commands retained for later re-enabling:
           # kubectl config current-context
           # kubectl get namespace bluecrest-prod
           # kubectl get secret ghcr-pull-secret --namespace bluecrest-prod
       - name: Apply production data ConfigMap
         run: |
-          echo "Production data ConfigMap setup skipped (simulated; no cluster changes made)"
+          echo "Would have created the production data ConfigMap in namespace bluecrest-prod"
           # Original commands retained for later re-enabling:
           # kubectl create configmap bluecrest-data \
           #   --from-file=data.csv=src/data/data.csv \
@@ -88,7 +88,7 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          echo "deployed! (simulated; Helm installation skipped)"
+          echo "Would have deployed to prod in namespace bluecrest-prod"
           # Original commands retained for later re-enabling:
           # VERSION="$(git describe --tags --exact-match "$DEPLOY_REF" 2>/dev/null || true)"
           # VERSION="${VERSION#v}"
@@ -109,7 +109,7 @@ jobs:
           #   --wait --timeout 180s
       - name: Verify rollout and HTTP health endpoint
         run: |
-          echo "Production health check skipped (simulated; no workload was installed)"
+          echo "Would have checked the production rollout and HTTP health endpoint in namespace bluecrest-prod"
           # Original commands retained for later re-enabling:
           # kubectl rollout status deployment/bluecrest --namespace bluecrest-prod --timeout=180s
           # (kubectl port-forward service/bluecrest 18501:8501 --namespace bluecrest-prod >/tmp/bluecrest-port-forward.log 2>&1 & echo $! >/tmp/bluecrest-port-forward.pid)
