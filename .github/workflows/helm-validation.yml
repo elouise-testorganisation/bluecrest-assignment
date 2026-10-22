@@ -1,0 +1,43 @@
+name: Validate Helm chart
+
+on:
+  pull_request:
+    paths:
+      - "deployment/helm/**"
+      - ".github/workflows/helm-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "deployment/helm/**"
+      - ".github/workflows/helm-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Lint and render Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: Lint default chart values
+        run: helm lint deployment/helm/timeseries-application
+
+      - name: Lint development values
+        run: helm lint deployment/helm/timeseries-application -f deployment/helm/timeseries-application/values-dev.yaml
+
+      - name: Lint production values
+        run: helm lint deployment/helm/timeseries-application -f deployment/helm/timeseries-application/values-prod.yaml
+
+      - name: Render default manifests
+        run: helm template bluecrest deployment/helm/timeseries-application --namespace bluecrest-dev
+
+      - name: Render development manifests
+        run: helm template bluecrest deployment/helm/timeseries-application --namespace bluecrest-dev -f deployment/helm/timeseries-application/values-dev.yaml
+
+      - name: Render production manifests
+        run: helm template bluecrest deployment/helm/timeseries-application --namespace bluecrest-prod -f deployment/helm/timeseries-application/values-prod.yaml
