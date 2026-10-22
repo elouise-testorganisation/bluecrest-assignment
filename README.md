@@ -2,7 +2,7 @@
 
 ## Prompts 
 - This project was setup with the help of a free subscription to chatgpt using codex. 
-- under /prompts the 5 major prompts have been included verbatim, which were used to generate the majority of features. The first two prompts can be directly linked to specific commits: 7d85784439402a09fe250987391ae222da716c14 and 7596dfc8316ab74c14d4705ed42fb810fe491bba , after which the prompts do not match up 1-to-1 with singular commits. 
+- under /prompts the 5 major prompts have been included verbatim, which were used to generate the majority of features. The first two prompts can be directly linked to specific commits: 7d85784439402a09fe250987391ae222da716c14 and 7596dfc8316ab74c14d4705ed42fb810fe491bba , after which the direct mapping does not function well anymore. 
 - This does not cover all work done with AI, but other parts were processes of debugging and refinement, via a mix of smaller AI prompts and manual modifications, configurations and tests. 
 
 ## Python application
