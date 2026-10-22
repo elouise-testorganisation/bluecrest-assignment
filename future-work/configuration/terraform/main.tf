@@ -1,4 +1,3 @@
-# Import this existing repository before applying; do not let Terraform try to create it.
 resource "github_repository" "this" {
   name                   = var.repository_name
   visibility             = "public"
@@ -10,8 +9,7 @@ resource "github_repository" "this" {
   vulnerability_alerts   = true
 }
 
-# On a personal repository, the owner is the administrator; GitHub does not
-# support organization teams/admin groups for personal repositories.
+# Administrators can bypass these rules; non-admins must satisfy required checks.
 resource "github_branch_protection" "main" {
   repository_id                   = github_repository.this.name
   pattern                         = "main"
@@ -20,11 +18,12 @@ resource "github_branch_protection" "main" {
   allows_force_pushes             = false
   require_conversation_resolution = true
 
-  required_pull_request_reviews {
-    dismiss_stale_reviews           = true
-    require_code_owner_reviews      = true
-    required_approving_review_count = 1
-    restrict_dismissals             = true
-    dismissal_restrictions          = ["/elouise-matthews"]
+  required_status_checks {
+    strict   = false
+    contexts = [
+      "testsPassed",
+      "imageBuildPassed",
+      "stackBuildPassed",
+    ]
   }
 }
