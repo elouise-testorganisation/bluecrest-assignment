@@ -1,44 +1,30 @@
 # Bluecrest time-series app
 
-A minimal Streamlit application that cleans a CSV and plots numeric time series against a date column. Isolated missing or malformed cells do not prevent plotting.
+## Python application
 
-## Local development
+- A small web app that reads a CSV of dates and values, tidies the data, and displays the selected time series as a chart and table.
+- It handles common data issues, such as inconsistent column names and missing or malformed values, so a few bad cells do not stop the app.
+- Automated tests check the data cleaning and confirm the app can still display usable data when the input is imperfect. This is a supporting part of the project, not its main focus.
 
-```bash
-python -m venv .venv
-. .venv/bin/activate
-pip install -r src/app/requirements.txt
-cd src
-PYTHONPATH=app streamlit run app/app.py
-```
+## Kubernetes deployment
 
-Set `BLUECREST_DATA_FILE` to select a local CSV; the container defaults to `/data/data.csv`.
+- The app is packaged for Kubernetes, with a deployment to run it, an internal service to connect to it, and a policy to restrict incoming network traffic. The data file is provided separately as a read-only configuration resource.
+- Basic security measures are in place: the app runs as a non-root user with limited container privileges, a read-only filesystem, health checks, and defined CPU and memory limits. A private image registry uses credentials for image pulls.
+- Development is deliberately lightweight, running one app instance with lower resource allocations. Production is configured for two instances with more resources.
+- Public access is disabled by default. The network policy provides an additional layer of protection, but it is not a substitute for firewalls.
+- There is no real hosting environment available to configure and validate the full network boundary. As a result, cloud and node firewalls, public routing, TLS, and other environment-level protections cannot yet be properly implemented and tested. These need to be addressed before exposing the app in a real production environment.
 
-Run tests with `cd src && PYTHONPATH=app python -m unittest discover -s test -v`.
+## GitHub Actions workflows
 
-## Container
+- **Tests:** Runs the automated Python tests. It can be started manually, called by another workflow, or requested on a pull request using a label.
+- **Build image:** Builds the app's container image for common processor architectures and publishes it, along with its deployment package. Main builds are tagged for production; other builds are marked as development builds.
+- **Development deploy:** Runs the tests and build, then deploys a non-production change to a temporary test namespace. It checks that the app starts and responds, then schedules the temporary namespace for cleanup.
+- **Production deploy:** Runs the tests and build before deploying changes from the main branch to the production namespace. It checks that the app starts and responds.
+- **Bootstrap infrastructure:** A manually started workflow that prepares the Kubernetes cluster resources and credentials needed for production deployment.
+- The deployment workflows require a self-hosted runner connected to the Kubernetes environment and the appropriate registry credentials. Those prerequisites cannot be fully validated without the actual environment.
 
-```bash
-docker build -t bluecrest:dev ./src
-docker run --rm -p 8501:8501 -v "$PWD/src/data/data.csv:/data/data.csv:ro" bluecrest:dev
-```
+## Pull-request checks and future work
 
-## Kubernetes / Helm
-
-All charts are consolidated under `deployment/helm`: the app chart is `deployment/helm/timeseries-application`, and static cluster prerequisites are `deployment/helm/cluster-infrastructure`. The app uses a ClusterIP Service and public Ingress is disabled by default. Its NetworkPolicy denies ingress unless optional ingress is enabled and routed through the configured ingress controller.
-
-```bash
-helm upgrade --install cluster-infrastructure deployment/helm/cluster-infrastructure --namespace default --wait
-kubectl create configmap bluecrest-data --from-file=data.csv=src/data/data.csv --namespace bluecrest-prod
-helm upgrade --install timeseries-application deployment/helm/timeseries-application --namespace bluecrest-prod --values deployment/helm/timeseries-application/values-prod.yaml
-```
-
-NetworkPolicy enforcement depends on the cluster CNI and does not replace node/cloud firewall controls.
-
-## GitHub Actions
-
-- **Tests**: manual, reusable via `workflow_call`, and PR label `runTests`. `testsPassed` is published to the tested commit on main and feature branches.
-- **Build image**: manual, reusable, and PR label `buildImage`. Main builds publish versioned `prod` images to GHCR; feature builds publish `dev` images tagged with branch and short commit SHA. `buildPassed` is published to the tested commit on main and feature branches.
-- **Deploy**: development and production workflows run tests and build the image before deployment. Static cluster resources are bootstrapped with `apply-infrastructure`.
-
-Ensure Actions can write packages and checks. For private GHCR images, configure an image pull secret in the target cluster.
+- The repository is set up so pull requests are checked before merging. The intended rules require four successful checks, while administrators can bypass the rules when necessary.
+- The Terraform files are a future-work example showing how repository settings and branch protections could be managed as code from a separate repository. They have not been applied to the live repository.
+- The Terraform example currently names only three required checks, so it needs to be reconciled with the intended four-check setup before it is used. Repository settings are currently managed manually.
