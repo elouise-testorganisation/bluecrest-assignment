@@ -79,7 +79,7 @@ jobs:
         run: |
           NS="bluecrest-dev-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "name=$NS" >> "$GITHUB_OUTPUT"
-          echo "created transient namespace $NS (simulated; Kubernetes namespace creation skipped)"
+          echo "Would have created a transient namespace: $NS"
           # Original namespace creation commands retained for later re-enabling:
           # NS="bluecrest-dev-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           # echo "name=$NS" >> "$GITHUB_OUTPUT"
@@ -92,7 +92,7 @@ jobs:
           GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
         shell: bash
         run: |
-          echo "GHCR pull secret setup skipped (simulated; no cluster changes made)"
+          echo "Would have configured the GHCR pull secret in transient namespace $NS"
           # Original commands retained for later re-enabling:
           # test -n "$GHCR_PULL_USERNAME" && test -n "$GHCR_PULL_TOKEN" || { echo "Set GHCR_PULL_USERNAME and GHCR_PULL_TOKEN repository secrets." >&2; exit 1; }
           # kubectl create secret docker-registry ghcr-pull-secret \
@@ -104,7 +104,7 @@ jobs:
         env:
           NS: ${{ steps.namespace.outputs.name }}
         run: |
-          echo "Development data ConfigMap setup skipped (simulated; no cluster changes made)"
+          echo "Would have created the development data ConfigMap in transient namespace $NS"
           # Original commands retained for later re-enabling:
           # kubectl create configmap bluecrest-data \
           #   --from-file=data.csv=src/data/data.csv \
@@ -115,7 +115,7 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          echo "deployed! (simulated; Helm installation skipped)"
+          echo "Would have deployed the development Helm release to transient namespace $NS"
           # Original commands retained for later re-enabling:
           # IMAGE_TAG="$(git rev-parse HEAD | cut -c1-7)"
           # BASE_CHART_VERSION="$(awk '$1 == "version:" {print $2; exit}' deployment/helm/timeseries-application/Chart.yaml)"
@@ -135,7 +135,7 @@ jobs:
         env:
           NS: ${{ steps.namespace.outputs.name }}
         run: |
-          echo "Deployment health check skipped (simulated; no workload was installed)"
+          echo "Would have checked the deployment rollout and HTTP health endpoint in transient namespace $NS"
           # Original commands retained for later re-enabling:
           # kubectl rollout status deployment/bluecrest --namespace "$NS" --timeout=180s
           # (kubectl port-forward service/bluecrest 18502:8501 --namespace "$NS" >/tmp/bluecrest-dev-port-forward.log 2>&1 & echo $! >/tmp/bluecrest-dev-port-forward.pid)
@@ -163,7 +163,7 @@ jobs:
         env:
           NS: ${{ needs.deploy.outputs.namespace }}
         run: |
-          echo "destroyed transient deployment (simulated; no namespace was created)"
+          echo "Would have destroyed the transient namespace: $NS"
           # Original commands retained for later re-enabling:
           # echo "Keeping $NS for 10 minutes before cleanup."
           # sleep 600
