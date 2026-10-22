@@ -1,8 +1,11 @@
 # Bluecrest time-series app
 
-A minimal Streamlit application that cleans a CSV and plots numeric time series against a date column. Isolated missing or malformed cells do not prevent plotting.
+## Python application
 
-## Local development
+- A small Streamlit app reads a CSV, cleans column names and parses dates and numeric values, then displays a selectable time-series line chart and data table.
+- Missing or malformed cells are handled where possible so one bad value does not stop the whole dataset from rendering; unusable rows are excluded and missing observations remain gaps.
+- Unit and app-level tests cover valid and malformed CSVs, missing files/headers, and rendering the chart and table.
+- Run locally using the commands below; set `BLUECREST_DATA_FILE` to choose a CSV file (the container default is `/data/data.csv`).
 
 ```bash
 python -m venv .venv
@@ -12,33 +15,29 @@ cd src
 PYTHONPATH=app streamlit run app/app.py
 ```
 
-Set `BLUECREST_DATA_FILE` to select a local CSV; the container defaults to `/data/data.csv`.
-
 Run tests with `cd src && PYTHONPATH=app python -m unittest discover -s test -v`.
 
-## Container
+## Kubernetes deployment
 
-```bash
-docker build -t bluecrest:dev ./src
-docker run --rm -p 8501:8501 -v "$PWD/src/data/data.csv:/data/data.csv:ro" bluecrest:dev
-```
+- Helm charts live under `deployment/helm`: `timeseries-application` deploys the app, and `cluster-infrastructure` creates cluster prerequisites including the production namespace and its resource quota.
+- The app chart manages a Deployment, an internal `ClusterIP` Service, and a NetworkPolicy. The CSV is supplied as a ConfigMap and mounted read-only; the app has readiness/liveness probes and CPU/memory requests and limits.
+- Pod/container hardening includes a non-root user, the runtime-default seccomp profile, a read-only root filesystem, disabled privilege escalation, and dropped Linux capabilities. Images are pulled using a Kubernetes image-pull secret.
+- Public Ingress is disabled by default. The NetworkPolicy restricts inbound traffic unless optional ingress is enabled through the configured ingress controller.
+- `values-dev.yaml` uses one replica and lower resource requests/limits for development. `values-prod.yaml` uses two replicas and higher resource requests/limits. Both keep Ingress disabled and enable the NetworkPolicy.
+- This is configuration, not a fully secured production environment: there is no managed environment here in which to configure and verify perimeter/node/cloud firewalls, public routing, TLS, and cluster-level controls. NetworkPolicy enforcement also depends on the cluster CNI; it does not replace firewall rules. Those controls must be designed and tested in the actual hosting environment before exposing the app.
+- The deployment workflows expect a self-hosted GitHub Actions runner labelled `linux` and `minikube`, access to the target cluster, and the `GHCR_PULL_USERNAME` / `GHCR_PULL_TOKEN` secrets.
 
-## Kubernetes / Helm
+## GitHub Actions workflows
 
-All charts are consolidated under `deployment/helm`: the app chart is `deployment/helm/timeseries-application`, and static cluster prerequisites are `deployment/helm/cluster-infrastructure`. The app uses a ClusterIP Service and public Ingress is disabled by default. Its NetworkPolicy denies ingress unless optional ingress is enabled and routed through the configured ingress controller.
+- **Tests** — `.github/workflows/tests.yml`. Runs the Python test suite on Python 3.12 and publishes the `testsPassed` check. Triggered manually with a ref, called by other workflows, or by adding the `runTests` label to a PR.
+- **Build image** — `.github/workflows/build.yml`. Builds and publishes the multi-architecture container image and packages the app Helm chart to GHCR. Main builds publish versioned production tags; other refs use a short-SHA development tag. Publishes `imageBuildPassed` and `stackBuildPassed`. Triggered manually with a ref, called by other workflows, or by adding the `buildImage` label to a PR.
+- **Development deploy** — `.github/workflows/dev-deploy.yml`. Runs tests and build first, deploys a non-main ref to a unique temporary namespace, checks rollout and HTTP health, then requests namespace cleanup after 10 minutes. Triggered manually with a non-main ref or by adding `deployDev` to a PR targeting a non-main branch.
+- **Production deploy** — `.github/workflows/prod-deploy.yml`. Runs tests and build before deploying to `bluecrest-prod`, then checks rollout and HTTP health. Triggered by a push to `main` or manually, with manual deployments restricted to `main`.
+- **Bootstrap Minikube infrastructure** — `.github/workflows/apply-infrastructure.yml`. Manually installs/updates the cluster-infrastructure chart and configures the production GHCR pull secret. Requires the self-hosted Minikube runner and the GHCR pull secrets.
 
-```bash
-helm upgrade --install cluster-infrastructure deployment/helm/cluster-infrastructure --namespace default --wait
-kubectl create configmap bluecrest-data --from-file=data.csv=src/data/data.csv --namespace bluecrest-prod
-helm upgrade --install timeseries-application deployment/helm/timeseries-application --namespace bluecrest-prod --values deployment/helm/timeseries-application/values-prod.yaml
-```
+## Pull-request checks and future work
 
-NetworkPolicy enforcement depends on the cluster CNI and does not replace node/cloud firewall controls.
-
-## GitHub Actions
-
-- **Tests**: manual, reusable via `workflow_call`, and PR label `runTests`. `testsPassed` is published to the tested commit on main and feature branches.
-- **Build image**: manual, reusable, and PR label `buildImage`. Main builds publish versioned `prod` images to GHCR; feature builds publish `dev` images tagged with branch and short commit SHA. `buildPassed` is published to the tested commit on main and feature branches.
-- **Deploy**: development and production workflows run tests and build the image before deployment. Static cluster resources are bootstrapped with `apply-infrastructure`.
-
-Ensure Actions can write packages and checks. For private GHCR images, configure an image pull secret in the target cluster.
+- The Terraform example under `future-work/configuration/terraform/` shows how repository settings and `main` branch protection could be managed from a separate repository with appropriate permissions. It is an example only and has not been applied to the live repository.
+- The example config currently requires the `testsPassed`, `imageBuildPassed`, and `stackBuildPassed` status checks on `main`. Administrators can bypass these rules because `enforce_admins = false`; conversation resolution is required, and force pushes and branch deletion are blocked.
+- The current Terraform example lists **three** named required checks, while the intended/manual repository setup has been described as requiring **four** check runs. Identify and add the fourth check context before relying on or applying this Terraform configuration.
+- Repository and branch permissions are currently configured manually. Review the Terraform owner/repository settings and permissions before any future plan/apply; import the existing repository into Terraform state first rather than attempting to create it.
