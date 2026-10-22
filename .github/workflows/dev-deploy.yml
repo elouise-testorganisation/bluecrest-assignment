@@ -64,11 +64,7 @@ jobs:
 
   deploy:
     needs: [select, tests, build]
-    # Run the simulation even if tests/build fail; no cluster access is used.
-    if: always() && needs.select.result == 'success'
-    # Original real-deployment runner retained for later re-enabling:
-    # runs-on: [self-hosted, linux, minikube]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, minikube]
     outputs:
       namespace: ${{ steps.namespace.outputs.name }}
     steps:
