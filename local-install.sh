@@ -105,9 +105,9 @@ kubectl get pods,services,hpa --namespace "$PROD_NAMESPACE" -o wide
 kubectl get pods,services,hpa --namespace "$DEV_NAMESPACE" -o wide
 
 printf '\nProduction app port-forward (run in a separate terminal):\n'
-printf '  kubectl port-forward --namespace %q service/%q 8501:8501\n' "$PROD_NAMESPACE" "$PROD_RELEASE"
+printf '  kubectl port-forward --namespace %q service/bluecrest 8501:8501\n' "$PROD_NAMESPACE"
 printf 'Development app port-forward (use another terminal/port):\n'
-printf '  kubectl port-forward --namespace %q service/%q 8502:8501\n' "$DEV_NAMESPACE" "$DEV_RELEASE"
+printf '  kubectl port-forward --namespace %q service/bluecrest 8502:8501\n' "$DEV_NAMESPACE"
 printf '\nVisit http://localhost:8501 (production config) or http://localhost:8502 (development config).\n'
 
 if [[ "$CLEAN_DEV" == "true" ]]; then
