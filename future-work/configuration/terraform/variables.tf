@@ -1,7 +1,7 @@
 variable "github_owner" {
-  description = "GitHub account that owns the repository."
+  description = "GitHub organization or user that owns the repository."
   type        = string
-  default     = "elouise-matthews"
+  default     = "elouise-testorganisation"
 }
 
 variable "repository_name" {
