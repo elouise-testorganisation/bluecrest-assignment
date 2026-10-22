@@ -154,12 +154,15 @@ jobs:
           # cat /tmp/bluecrest-dev-port-forward.log
           # echo "Development health check failed." >&2
           # exit 1
-          # 
-          # cleanup:
-          # needs: [select, deploy]
-          # if: always() && needs.select.result == 'success' && needs.deploy.outputs.namespace != ''
-          # runs-on: [self-hosted, linux, minikube]
-          # steps:
+
+
+  cleanup:
+    needs: [select, deploy]
+    if: always() && needs.select.result == 'success' && needs.deploy.outputs.namespace != ''
+    # Original real-deployment runner retained for later re-enabling:
+    # runs-on: [self-hosted, linux, minikube]
+    runs-on: ubuntu-latest
+    steps:
       - name: Delete transient development namespace
         env:
           NS: ${{ needs.deploy.outputs.namespace }}
