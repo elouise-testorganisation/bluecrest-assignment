@@ -25,7 +25,7 @@ die() {
   exit 1
 }
 
-for cmd in docker minikube kubectl helm find; do
+for cmd in docker minikube kubectl helm find curl nohup; do
   command -v "$cmd" >/dev/null 2>&1 || die "Required command not found: $cmd"
 done
 
@@ -104,14 +104,54 @@ printf '\n==> Deployment status\n'
 kubectl get pods,services,hpa --namespace "$PROD_NAMESPACE" -o wide
 kubectl get pods,services,hpa --namespace "$DEV_NAMESPACE" -o wide
 
-printf '\nProduction app port-forward (run in a separate terminal):\n'
-printf '  kubectl port-forward --namespace %q service/bluecrest 8501:8501\n' "$PROD_NAMESPACE"
-printf 'Development app port-forward (use another terminal/port):\n'
-printf '  kubectl port-forward --namespace %q service/bluecrest 8502:8501\n' "$DEV_NAMESPACE"
-printf '\nVisit http://localhost:8501 (production config) or http://localhost:8502 (development config).\n'
+start_port_forward() {
+  local namespace="$1"
+  local local_port="$2"
+  local log_file="${TMPDIR:-/tmp}/bluecrest-port-forward-${namespace}-${local_port}.log"
+  local pid_file="${TMPDIR:-/tmp}/bluecrest-port-forward-${namespace}-${local_port}.pid"
+  local pid
 
-if [[ "$CLEAN_DEV" == "true" ]]; then
-  printf '\n==> CLEAN_DEV=true: removing transient development release and namespace\n'
-  helm uninstall "$DEV_RELEASE" --namespace "$DEV_NAMESPACE"
-  kubectl delete namespace "$DEV_NAMESPACE" --wait=true
-fi
+  # Reuse an existing port-forward started by this script, if it is still alive.
+  if [[ -f "$pid_file" ]]; then
+    pid="$(cat "$pid_file")"
+    if kill -0 "$pid" 2>/dev/null && grep -q "Forwarding from 127.0.0.1:$local_port" "$log_file" 2>/dev/null; then
+      printf 'Port-forward already running for %s on localhost:%s\n' "$namespace" "$local_port"
+      return
+    fi
+    rm -f "$pid_file"
+  fi
+
+  printf 'Starting port-forward: namespace=%s localhost:%s\n' "$namespace" "$local_port"
+  nohup kubectl port-forward --address 127.0.0.1 \
+    --namespace "$namespace" service/bluecrest "$local_port:8501" \
+    >"$log_file" 2>&1 </dev/null &
+  pid=$!
+  printf '%s\n' "$pid" > "$pid_file"
+
+  for attempt in {1..30}; do
+    if grep -q "Forwarding from 127.0.0.1:$local_port" "$log_file" 2>/dev/null; then
+      return
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      printf 'Port-forward failed. Log: %s\n' "$log_file" >&2
+      cat "$log_file" >&2
+      rm -f "$pid_file"
+      die "Could not start port-forward for namespace $namespace."
+    fi
+    sleep 1
+  done
+
+  printf 'Timed out starting port-forward. Log: %s\n' "$log_file" >&2
+  kill "$pid" 2>/dev/null || true
+  rm -f "$pid_file"
+  die "Timed out waiting for port-forward on localhost:$local_port."
+}
+
+printf '\n==> Starting local port-forwards automatically\n'
+start_port_forward "$PROD_NAMESPACE" 8501
+start_port_forward "$DEV_NAMESPACE" 8502
+
+printf '\nDeployment complete. No further commands are needed to open the apps.\n'
+printf 'Production configuration: http://localhost:8501\n'
+printf 'Development configuration: http://localhost:8502\n'
+printf 'Port-forward logs are in %s\n' "${TMPDIR:-/tmp}/bluecrest-port-forward-<namespace>-<port>.log"
