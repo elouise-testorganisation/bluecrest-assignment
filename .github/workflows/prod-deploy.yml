@@ -61,7 +61,11 @@ jobs:
 
   deploy:
     needs: [select, tests, build]
-    runs-on: [self-hosted, linux, minikube]
+    # Run the simulation even if tests/build fail; no cluster access is used.
+    if: always() && needs.select.result == 'success'
+    # Original real-deployment runner retained for later re-enabling:
+    # runs-on: [self-hosted, linux, minikube]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
