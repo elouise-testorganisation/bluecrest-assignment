@@ -1,4 +1,9 @@
 replicaCount: 2
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
 image:
   repository: ghcr.io/elouise-matthews/bluecrest-assignment/prod
   tag: "0.1.0"
