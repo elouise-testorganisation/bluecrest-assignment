@@ -1,0 +1,2 @@
+# PDB for the prod namespace
+# probably do not need for the dev namespaces, also in order to keep the transient namespace generation simpler for this setup. 

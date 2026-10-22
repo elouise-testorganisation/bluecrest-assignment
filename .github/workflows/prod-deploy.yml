@@ -68,6 +68,9 @@ jobs:
           ref: ${{ needs.select.outputs.ref }}
       - uses: azure/setup-helm@v4
       - uses: azure/setup-kubectl@v4
+      - name: Approval gate
+        run: |
+          echo "Could wait for approval?"
       - name: Verify Minikube access and prerequisites
         run: |
           echo "Would have checked Minikube access, the production namespace, and the GHCR pull secret"
