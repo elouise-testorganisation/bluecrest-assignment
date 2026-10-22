@@ -2,42 +2,29 @@
 
 ## Python application
 
-- A small Streamlit app reads a CSV, cleans column names and parses dates and numeric values, then displays a selectable time-series line chart and data table.
-- Missing or malformed cells are handled where possible so one bad value does not stop the whole dataset from rendering; unusable rows are excluded and missing observations remain gaps.
-- Unit and app-level tests cover valid and malformed CSVs, missing files/headers, and rendering the chart and table.
-- Run locally using the commands below; set `BLUECREST_DATA_FILE` to choose a CSV file (the container default is `/data/data.csv`).
-
-```bash
-python -m venv .venv
-. .venv/bin/activate
-pip install -r src/app/requirements.txt
-cd src
-PYTHONPATH=app streamlit run app/app.py
-```
-
-Run tests with `cd src && PYTHONPATH=app python -m unittest discover -s test -v`.
+- A small web app that reads a CSV of dates and values, tidies the data, and displays the selected time series as a chart and table.
+- It handles common data issues, such as inconsistent column names and missing or malformed values, so a few bad cells do not stop the app.
+- Automated tests check the data cleaning and confirm the app can still display usable data when the input is imperfect. This is a supporting part of the project, not its main focus.
 
 ## Kubernetes deployment
 
-- Helm charts live under `deployment/helm`: `timeseries-application` deploys the app, and `cluster-infrastructure` creates cluster prerequisites including the production namespace and its resource quota.
-- The app chart manages a Deployment, an internal `ClusterIP` Service, and a NetworkPolicy. The CSV is supplied as a ConfigMap and mounted read-only; the app has readiness/liveness probes and CPU/memory requests and limits.
-- Pod/container hardening includes a non-root user, the runtime-default seccomp profile, a read-only root filesystem, disabled privilege escalation, and dropped Linux capabilities. Images are pulled using a Kubernetes image-pull secret.
-- Public Ingress is disabled by default. The NetworkPolicy restricts inbound traffic unless optional ingress is enabled through the configured ingress controller.
-- `values-dev.yaml` uses one replica and lower resource requests/limits for development. `values-prod.yaml` uses two replicas and higher resource requests/limits. Both keep Ingress disabled and enable the NetworkPolicy.
-- This is configuration, not a fully secured production environment: there is no managed environment here in which to configure and verify perimeter/node/cloud firewalls, public routing, TLS, and cluster-level controls. NetworkPolicy enforcement also depends on the cluster CNI; it does not replace firewall rules. Those controls must be designed and tested in the actual hosting environment before exposing the app.
-- The deployment workflows expect a self-hosted GitHub Actions runner labelled `linux` and `minikube`, access to the target cluster, and the `GHCR_PULL_USERNAME` / `GHCR_PULL_TOKEN` secrets.
+- The app is packaged for Kubernetes, with a deployment to run it, an internal service to connect to it, and a policy to restrict incoming network traffic. The data file is provided separately as a read-only configuration resource.
+- Basic security measures are in place: the app runs as a non-root user with limited container privileges, a read-only filesystem, health checks, and defined CPU and memory limits. A private image registry uses credentials for image pulls.
+- Development is deliberately lightweight, running one app instance with lower resource allocations. Production is configured for two instances with more resources.
+- Public access is disabled by default. The network policy provides an additional layer of protection, but it is not a substitute for firewalls.
+- There is no real hosting environment available to configure and validate the full network boundary. As a result, cloud and node firewalls, public routing, TLS, and other environment-level protections cannot yet be properly implemented and tested. These need to be addressed before exposing the app in a real production environment.
 
 ## GitHub Actions workflows
 
-- **Tests** — `.github/workflows/tests.yml`. Runs the Python test suite on Python 3.12 and publishes the `testsPassed` check. Triggered manually with a ref, called by other workflows, or by adding the `runTests` label to a PR.
-- **Build image** — `.github/workflows/build.yml`. Builds and publishes the multi-architecture container image and packages the app Helm chart to GHCR. Main builds publish versioned production tags; other refs use a short-SHA development tag. Publishes `imageBuildPassed` and `stackBuildPassed`. Triggered manually with a ref, called by other workflows, or by adding the `buildImage` label to a PR.
-- **Development deploy** — `.github/workflows/dev-deploy.yml`. Runs tests and build first, deploys a non-main ref to a unique temporary namespace, checks rollout and HTTP health, then requests namespace cleanup after 10 minutes. Triggered manually with a non-main ref or by adding `deployDev` to a PR targeting a non-main branch.
-- **Production deploy** — `.github/workflows/prod-deploy.yml`. Runs tests and build before deploying to `bluecrest-prod`, then checks rollout and HTTP health. Triggered by a push to `main` or manually, with manual deployments restricted to `main`.
-- **Bootstrap Minikube infrastructure** — `.github/workflows/apply-infrastructure.yml`. Manually installs/updates the cluster-infrastructure chart and configures the production GHCR pull secret. Requires the self-hosted Minikube runner and the GHCR pull secrets.
+- **Tests:** Runs the automated Python tests. It can be started manually, called by another workflow, or requested on a pull request using a label.
+- **Build image:** Builds the app's container image for common processor architectures and publishes it, along with its deployment package. Main builds are tagged for production; other builds are marked as development builds.
+- **Development deploy:** Runs the tests and build, then deploys a non-production change to a temporary test namespace. It checks that the app starts and responds, then schedules the temporary namespace for cleanup.
+- **Production deploy:** Runs the tests and build before deploying changes from the main branch to the production namespace. It checks that the app starts and responds.
+- **Bootstrap infrastructure:** A manually started workflow that prepares the Kubernetes cluster resources and credentials needed for production deployment.
+- The deployment workflows require a self-hosted runner connected to the Kubernetes environment and the appropriate registry credentials. Those prerequisites cannot be fully validated without the actual environment.
 
 ## Pull-request checks and future work
 
-- The Terraform example under `future-work/configuration/terraform/` shows how repository settings and `main` branch protection could be managed from a separate repository with appropriate permissions. It is an example only and has not been applied to the live repository.
-- The example config currently requires the `testsPassed`, `imageBuildPassed`, and `stackBuildPassed` status checks on `main`. Administrators can bypass these rules because `enforce_admins = false`; conversation resolution is required, and force pushes and branch deletion are blocked.
-- The current Terraform example lists **three** named required checks, while the intended/manual repository setup has been described as requiring **four** check runs. Identify and add the fourth check context before relying on or applying this Terraform configuration.
-- Repository and branch permissions are currently configured manually. Review the Terraform owner/repository settings and permissions before any future plan/apply; import the existing repository into Terraform state first rather than attempting to create it.
+- The repository is set up so pull requests are checked before merging. The intended rules require four successful checks, while administrators can bypass the rules when necessary.
+- The Terraform files are a future-work example showing how repository settings and branch protections could be managed as code from a separate repository. They have not been applied to the live repository.
+- The Terraform example currently names only three required checks, so it needs to be reconciled with the intended four-check setup before it is used. Repository settings are currently managed manually.
