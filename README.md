@@ -10,6 +10,16 @@
 - A small web app that reads a CSV of dates and values, tidies the data, and displays the selected time series as a chart and table.
 - It handles common data issues, such as inconsistent column names and missing or malformed values, so a few bad cells do not stop the app.
 - Automated tests check the data cleaning and confirm the app can still display usable data when the input is imperfect. This is a supporting part of the project, not its main focus.
+- To view the app locally, run: 
+```
+brew install python@3.12     
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r src/app/requirements.txt
+export BLUECREST_DATA_FILE="$PWD/src/data/data.csv"
+python -m streamlit run src/app/app.py
+```
 
 ## Kubernetes deployment
 
