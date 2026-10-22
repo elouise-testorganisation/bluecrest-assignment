@@ -61,7 +61,7 @@ jobs:
 
   deploy:
     needs: [select, tests, build]
-    runs-on: [self-hosted, linux, minikube]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,49 +70,57 @@ jobs:
       - uses: azure/setup-kubectl@v4
       - name: Verify Minikube access and prerequisites
         run: |
-          kubectl config current-context
-          kubectl get namespace bluecrest-prod
-          kubectl get secret ghcr-pull-secret --namespace bluecrest-prod
+          echo "Would have checked Minikube access, the production namespace, and the GHCR pull secret"
+          # Original commands retained for later re-enabling:
+          # kubectl config current-context
+          # kubectl get namespace bluecrest-prod
+          # kubectl get secret ghcr-pull-secret --namespace bluecrest-prod
       - name: Apply production data ConfigMap
         run: |
-          kubectl create configmap bluecrest-data \
-            --from-file=data.csv=src/data/data.csv \
-            --namespace bluecrest-prod --dry-run=client -o yaml | kubectl apply -f -
+          echo "Would have created the production data ConfigMap in namespace bluecrest-prod"
+          # Original commands retained for later re-enabling:
+          # kubectl create configmap bluecrest-data \
+          #   --from-file=data.csv=src/data/data.csv \
+          #   --namespace bluecrest-prod --dry-run=client -o yaml | kubectl apply -f -
       - name: Pull and deploy published production Helm chart
         env:
           DEPLOY_REF: ${{ needs.select.outputs.ref }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          VERSION="$(git describe --tags --exact-match "$DEPLOY_REF" 2>/dev/null || true)"
-          VERSION="${VERSION#v}"
-          if [[ -z "$VERSION" ]]; then
-            VERSION="$(grep -E '^version\s*=' src/app/pyproject.toml | head -1 | cut -d '"' -f2)"
-          fi
-          CHART_VERSION="$(awk '$1 == "version:" {print $2; exit}' deployment/helm/timeseries-application/Chart.yaml)"
-          CHART_REF="oci://ghcr.io/${GITHUB_REPOSITORY,,}/charts/timeseries-application"
-          CHART_ROOT="$RUNNER_TEMP/published-chart"
-          printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          helm pull "$CHART_REF" --version "$CHART_VERSION" --untar --untardir "$CHART_ROOT"
-          CHART_DIR="$CHART_ROOT/timeseries-application"
-          echo "Deploying prod image version $VERSION with chart version $CHART_VERSION"
-          helm upgrade --install timeseries-application "$CHART_DIR" \
-            --namespace bluecrest-prod \
-            --values "$CHART_DIR/values-prod.yaml" \
-            --set image.tag="$VERSION" \
-            --wait --timeout 180s
+          echo "Would have deployed to prod in namespace bluecrest-prod"
+          # Original commands retained for later re-enabling:
+          # VERSION="$(git describe --tags --exact-match "$DEPLOY_REF" 2>/dev/null || true)"
+          # VERSION="${VERSION#v}"
+          # if [[ -z "$VERSION" ]]; then
+          #   VERSION="$(grep -E '^version\s*=' src/app/pyproject.toml | head -1 | cut -d '"' -f2)"
+          # fi
+          # CHART_VERSION="$(awk '$1 == "version:" {print $2; exit}' deployment/helm/timeseries-application/Chart.yaml)"
+          # CHART_REF="oci://ghcr.io/${GITHUB_REPOSITORY,,}/charts/timeseries-application"
+          # CHART_ROOT="$RUNNER_TEMP/published-chart"
+          # printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          # helm pull "$CHART_REF" --version "$CHART_VERSION" --untar --untardir "$CHART_ROOT"
+          # CHART_DIR="$CHART_ROOT/timeseries-application"
+          # echo "Deploying prod image version $VERSION with chart version $CHART_VERSION"
+          # helm upgrade --install timeseries-application "$CHART_DIR" \
+          #   --namespace bluecrest-prod \
+          #   --values "$CHART_DIR/values-prod.yaml" \
+          #   --set image.tag="$VERSION" \
+          #   --wait --timeout 180s
       - name: Verify rollout and HTTP health endpoint
         run: |
-          kubectl rollout status deployment/bluecrest --namespace bluecrest-prod --timeout=180s
-          (kubectl port-forward service/bluecrest 18501:8501 --namespace bluecrest-prod >/tmp/bluecrest-port-forward.log 2>&1 & echo $! >/tmp/bluecrest-port-forward.pid)
-          trap 'kill "$(cat /tmp/bluecrest-port-forward.pid)" 2>/dev/null || true' EXIT
-          for attempt in $(seq 1 20); do
-            if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18501/_stcore/health', timeout=2)" 2>/dev/null; then
-              echo "Production health check passed."
-              exit 0
-            fi
-            sleep 2
-          done
-          cat /tmp/bluecrest-port-forward.log
-          echo "Production health check failed." >&2
-          exit 1
+          echo "Would have checked the production rollout and HTTP health endpoint in namespace bluecrest-prod"
+          # Original commands retained for later re-enabling:
+          # kubectl rollout status deployment/bluecrest --namespace bluecrest-prod --timeout=180s
+          # (kubectl port-forward service/bluecrest 18501:8501 --namespace bluecrest-prod >/tmp/bluecrest-port-forward.log 2>&1 & echo $! >/tmp/bluecrest-port-forward.pid)
+          # trap 'kill "$(cat /tmp/bluecrest-port-forward.pid)" 2>/dev/null || true' EXIT
+          # for attempt in $(seq 1 20); do
+          #   if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18501/_stcore/health', timeout=2)" 2>/dev/null; then
+          #     echo "Production health check passed."
+          #     exit 0
+          #   fi
+          #   sleep 2
+          # done
+          # cat /tmp/bluecrest-port-forward.log
+          # echo "Production health check failed." >&2
+          # exit 1

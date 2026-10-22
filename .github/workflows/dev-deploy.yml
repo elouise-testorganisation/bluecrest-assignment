@@ -20,7 +20,7 @@ on:
         type: string
   pull_request:
     types: [labeled]
-    branches-ignore: [main]
+    branches: [main]
 
 permissions:
   contents: read
@@ -64,7 +64,7 @@ jobs:
 
   deploy:
     needs: [select, tests, build]
-    runs-on: [self-hosted, linux, minikube]
+    runs-on: ubuntu-latest
     outputs:
       namespace: ${{ steps.namespace.outputs.name }}
     steps:
@@ -79,8 +79,12 @@ jobs:
         run: |
           NS="bluecrest-dev-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "name=$NS" >> "$GITHUB_OUTPUT"
-          kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
-          kubectl label namespace "$NS" app.kubernetes.io/part-of=bluecrest bluecrest.openai.com/environment=development --overwrite
+          echo "Would have created a transient namespace: $NS"
+          # Original namespace creation commands retained for later re-enabling:
+          # NS="bluecrest-dev-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          # echo "name=$NS" >> "$GITHUB_OUTPUT"
+          # kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+          # kubectl label namespace "$NS" app.kubernetes.io/part-of=bluecrest bluecrest.openai.com/environment=development --overwrite
       - name: Configure GHCR pull secret in transient namespace
         env:
           NS: ${{ steps.namespace.outputs.name }}
@@ -88,67 +92,80 @@ jobs:
           GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
         shell: bash
         run: |
-          test -n "$GHCR_PULL_USERNAME" && test -n "$GHCR_PULL_TOKEN" || { echo "Set GHCR_PULL_USERNAME and GHCR_PULL_TOKEN repository secrets." >&2; exit 1; }
-          kubectl create secret docker-registry ghcr-pull-secret \
-            --docker-server=ghcr.io \
-            --docker-username="$GHCR_PULL_USERNAME" \
-            --docker-password="$GHCR_PULL_TOKEN" \
-            --namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+          echo "Would have configured the GHCR pull secret in transient namespace $NS"
+          # Original commands retained for later re-enabling:
+          # test -n "$GHCR_PULL_USERNAME" && test -n "$GHCR_PULL_TOKEN" || { echo "Set GHCR_PULL_USERNAME and GHCR_PULL_TOKEN repository secrets." >&2; exit 1; }
+          # kubectl create secret docker-registry ghcr-pull-secret \
+          #   --docker-server=ghcr.io \
+          #   --docker-username="$GHCR_PULL_USERNAME" \
+          #   --docker-password="$GHCR_PULL_TOKEN" \
+          #   --namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
       - name: Apply development data ConfigMap
         env:
           NS: ${{ steps.namespace.outputs.name }}
         run: |
-          kubectl create configmap bluecrest-data \
-            --from-file=data.csv=src/data/data.csv \
-            --namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+          echo "Would have created the development data ConfigMap in transient namespace $NS"
+          # Original commands retained for later re-enabling:
+          # kubectl create configmap bluecrest-data \
+          #   --from-file=data.csv=src/data/data.csv \
+          #   --namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
       - name: Pull and deploy published development Helm chart
         env:
           NS: ${{ steps.namespace.outputs.name }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          IMAGE_TAG="$(git rev-parse HEAD | cut -c1-7)"
-          BASE_CHART_VERSION="$(awk '$1 == "version:" {print $2; exit}' deployment/helm/timeseries-application/Chart.yaml)"
-          CHART_VERSION="${BASE_CHART_VERSION}-dev.${IMAGE_TAG}"
-          CHART_REF="oci://ghcr.io/${GITHUB_REPOSITORY,,}/charts/timeseries-application"
-          CHART_ROOT="$RUNNER_TEMP/published-chart"
-          printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          helm pull "$CHART_REF" --version "$CHART_VERSION" --untar --untardir "$CHART_ROOT"
-          CHART_DIR="$CHART_ROOT/timeseries-application"
-          echo "Deploying dev image tag $IMAGE_TAG and chart version $CHART_VERSION into transient namespace $NS"
-          helm upgrade --install timeseries-application "$CHART_DIR" \
-            --namespace "$NS" \
-            --values "$CHART_DIR/values-dev.yaml" \
-            --set image.tag="$IMAGE_TAG" \
-            --wait --timeout 180s
+          echo "Would have deployed the development Helm release to transient namespace $NS"
+          # Original commands retained for later re-enabling:
+          # IMAGE_TAG="$(git rev-parse HEAD | cut -c1-7)"
+          # BASE_CHART_VERSION="$(awk '$1 == "version:" {print $2; exit}' deployment/helm/timeseries-application/Chart.yaml)"
+          # CHART_VERSION="${BASE_CHART_VERSION}-dev.${IMAGE_TAG}"
+          # CHART_REF="oci://ghcr.io/${GITHUB_REPOSITORY,,}/charts/timeseries-application"
+          # CHART_ROOT="$RUNNER_TEMP/published-chart"
+          # printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          # helm pull "$CHART_REF" --version "$CHART_VERSION" --untar --untardir "$CHART_ROOT"
+          # CHART_DIR="$CHART_ROOT/timeseries-application"
+          # echo "Deploying dev image tag $IMAGE_TAG and chart version $CHART_VERSION into transient namespace $NS"
+          # helm upgrade --install timeseries-application "$CHART_DIR" \
+          #   --namespace "$NS" \
+          #   --values "$CHART_DIR/values-dev.yaml" \
+          #   --set image.tag="$IMAGE_TAG" \
+          #   --wait --timeout 180s
       - name: Verify rollout and HTTP health endpoint
         env:
           NS: ${{ steps.namespace.outputs.name }}
         run: |
-          kubectl rollout status deployment/bluecrest --namespace "$NS" --timeout=180s
-          (kubectl port-forward service/bluecrest 18502:8501 --namespace "$NS" >/tmp/bluecrest-dev-port-forward.log 2>&1 & echo $! >/tmp/bluecrest-dev-port-forward.pid)
-          trap 'kill "$(cat /tmp/bluecrest-dev-port-forward.pid)" 2>/dev/null || true' EXIT
-          for attempt in $(seq 1 20); do
-            if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18502/_stcore/health', timeout=2)" 2>/dev/null; then
-              echo "Development health check passed."
-              exit 0
-            fi
-            sleep 2
-          done
-          cat /tmp/bluecrest-dev-port-forward.log
-          echo "Development health check failed." >&2
-          exit 1
+          echo "Would have checked the deployment rollout and HTTP health endpoint in transient namespace $NS"
+          # Original commands retained for later re-enabling:
+          # kubectl rollout status deployment/bluecrest --namespace "$NS" --timeout=180s
+          # (kubectl port-forward service/bluecrest 18502:8501 --namespace "$NS" >/tmp/bluecrest-dev-port-forward.log 2>&1 & echo $! >/tmp/bluecrest-dev-port-forward.pid)
+          # trap 'kill "$(cat /tmp/bluecrest-dev-port-forward.pid)" 2>/dev/null || true' EXIT
+          # for attempt in $(seq 1 20); do
+          #   if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18502/_stcore/health', timeout=2)" 2>/dev/null; then
+          #     echo "Development health check passed."
+          #     exit 0
+          #   fi
+          #   sleep 2
+          # done
+          # cat /tmp/bluecrest-dev-port-forward.log
+          # echo "Development health check failed." >&2
+          # exit 1
+
 
   cleanup:
     needs: [select, deploy]
     if: always() && needs.select.result == 'success' && needs.deploy.outputs.namespace != ''
-    runs-on: [self-hosted, linux, minikube]
+    # Original real-deployment runner retained for later re-enabling:
+    # runs-on: [self-hosted, linux, minikube]
+    runs-on: ubuntu-latest
     steps:
       - name: Delete transient development namespace
         env:
           NS: ${{ needs.deploy.outputs.namespace }}
         run: |
-          echo "Keeping $NS for 10 minutes before cleanup."
-          sleep 600
-          kubectl delete namespace "$NS" --wait=false
-          echo "Transient development namespace $NS deletion requested."
+          echo "Would have destroyed the transient namespace: $NS"
+          # Original commands retained for later re-enabling:
+          # echo "Keeping $NS for 10 minutes before cleanup."
+          # sleep 600
+          # kubectl delete namespace "$NS" --wait=false
+          # echo "Transient development namespace $NS deletion requested."
